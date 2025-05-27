@@ -1323,7 +1323,8 @@ async def pixelhelp(ctx):
         name="🗃️ **System Management**",
         value=(
             "`!create_system <name>` - Create a new system.\n"
-            "`!edit_system` - Edit the current system (name, avatar, banner, description, pronouns, color).\n"
+            "`!edit_system` - Edit the current system (name, avatar, banner, description, pronouns, color, tag).\n"
+            "`!set_system_tag <tag>` - Set or update your system tag.\n"
             "`!delete_system` - Delete the current system.\n"
             "`!system` - Show the current system’s info, including avatars, banners, and colors.\n"
             "`!export_system` - Export your entire system to a JSON file (sent to DMs).\n"
@@ -1793,4 +1794,3 @@ import os
 
 # Use the bot token from the Replit secret
 bot.run(os.getenv("NEW_BOT_TOKEN"))
-
