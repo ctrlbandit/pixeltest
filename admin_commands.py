@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from data_manager import category_blacklist, channel_blacklist, save_category_blacklist, save_blacklist, global_profiles, data_manager
+from data_manager import data_manager
 
 def setup_admin_commands(bot):
     @bot.command(name="pixel")
@@ -11,7 +11,7 @@ def setup_admin_commands(bot):
         
         # Get database connection status
         try:
-            db_status = "🟢 Connected" if data_manager.collection is not None else "🔴 Disconnected"
+            db_status = "🟢 Connected" if data_manager.profiles_collection is not None else "🔴 Disconnected"
         except:
             db_status = "🔴 Disconnected"
         
@@ -64,19 +64,24 @@ def setup_admin_commands(bot):
         guild_id = str(ctx.guild.id)
         channel_id = str(channel.id)
         
-        if guild_id not in channel_blacklist:
-            channel_blacklist[guild_id] = []
+        # Get current blacklist
+        current_blacklist = await data_manager.get_blacklist("channel", guild_id)
+        if not isinstance(current_blacklist, list):
+            current_blacklist = []
         
-        if channel_id not in channel_blacklist[guild_id]:
-            channel_blacklist[guild_id].append(channel_id)
-            save_blacklist()
+        if channel_id not in current_blacklist:
+            current_blacklist.append(channel_id)
+            success = await data_manager.save_blacklist("channel", guild_id, current_blacklist)
             
-            embed = discord.Embed(
-                title="✅ Channel Blacklisted",
-                description=f"Channel {channel.mention} has been blacklisted from proxy functionality.",
-                color=0x00ff00
-            )
-            await ctx.send(embed=embed)
+            if success:
+                embed = discord.Embed(
+                    title="✅ Channel Blacklisted",
+                    description=f"Channel {channel.mention} has been blacklisted from proxy functionality.",
+                    color=0x00ff00
+                )
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to save blacklist. Please try again.")
         else:
             embed = discord.Embed(
                 title="⚠️ Already Blacklisted",
@@ -92,19 +97,24 @@ def setup_admin_commands(bot):
         guild_id = str(ctx.guild.id)
         category_id = str(category.id)
         
-        if guild_id not in category_blacklist:
-            category_blacklist[guild_id] = []
+        # Get current blacklist
+        current_blacklist = await data_manager.get_blacklist("category", guild_id)
+        if not isinstance(current_blacklist, list):
+            current_blacklist = []
         
-        if category_id not in category_blacklist[guild_id]:
-            category_blacklist[guild_id].append(category_id)
-            save_category_blacklist()
+        if category_id not in current_blacklist:
+            current_blacklist.append(category_id)
+            success = await data_manager.save_blacklist("category", guild_id, current_blacklist)
             
-            embed = discord.Embed(
-                title="✅ Category Blacklisted",
-                description=f"Category **{category.name}** has been blacklisted from proxy functionality.",
-                color=0x00ff00
-            )
-            await ctx.send(embed=embed)
+            if success:
+                embed = discord.Embed(
+                    title="✅ Category Blacklisted",
+                    description=f"Category **{category.name}** has been blacklisted from proxy functionality.",
+                    color=0x00ff00
+                )
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to save blacklist. Please try again.")
         else:
             embed = discord.Embed(
                 title="⚠️ Already Blacklisted",
@@ -120,16 +130,24 @@ def setup_admin_commands(bot):
         guild_id = str(ctx.guild.id)
         channel_id = str(channel.id)
         
-        if guild_id in channel_blacklist and channel_id in channel_blacklist[guild_id]:
-            channel_blacklist[guild_id].remove(channel_id)
-            save_blacklist()
+        # Get current blacklist
+        current_blacklist = await data_manager.get_blacklist("channel", guild_id)
+        if not isinstance(current_blacklist, list):
+            current_blacklist = []
+        
+        if channel_id in current_blacklist:
+            current_blacklist.remove(channel_id)
+            success = await data_manager.save_blacklist("channel", guild_id, current_blacklist)
             
-            embed = discord.Embed(
-                title="✅ Channel Unblacklisted",
-                description=f"Channel {channel.mention} has been removed from the blacklist.",
-                color=0x00ff00
-            )
-            await ctx.send(embed=embed)
+            if success:
+                embed = discord.Embed(
+                    title="✅ Channel Unblacklisted",
+                    description=f"Channel {channel.mention} has been removed from the blacklist.",
+                    color=0x00ff00
+                )
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to save blacklist. Please try again.")
         else:
             embed = discord.Embed(
                 title="⚠️ Not Blacklisted",
@@ -145,16 +163,24 @@ def setup_admin_commands(bot):
         guild_id = str(ctx.guild.id)
         category_id = str(category.id)
         
-        if guild_id in category_blacklist and category_id in category_blacklist[guild_id]:
-            category_blacklist[guild_id].remove(category_id)
-            save_category_blacklist()
+        # Get current blacklist
+        current_blacklist = await data_manager.get_blacklist("category", guild_id)
+        if not isinstance(current_blacklist, list):
+            current_blacklist = []
+        
+        if category_id in current_blacklist:
+            current_blacklist.remove(category_id)
+            success = await data_manager.save_blacklist("category", guild_id, current_blacklist)
             
-            embed = discord.Embed(
-                title="✅ Category Unblacklisted",
-                description=f"Category **{category.name}** has been removed from the blacklist.",
-                color=0x00ff00
-            )
-            await ctx.send(embed=embed)
+            if success:
+                embed = discord.Embed(
+                    title="✅ Category Unblacklisted",
+                    description=f"Category **{category.name}** has been removed from the blacklist.",
+                    color=0x00ff00
+                )
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to save blacklist. Please try again.")
         else:
             embed = discord.Embed(
                 title="⚠️ Not Blacklisted",
@@ -176,24 +202,30 @@ def setup_admin_commands(bot):
         )
         
         # Get blacklisted channels
+        channel_blacklist = await data_manager.get_blacklist("channel", guild_id)
+        if not isinstance(channel_blacklist, list):
+            channel_blacklist = []
+            
         blacklisted_channels = []
-        if guild_id in channel_blacklist:
-            for channel_id in channel_blacklist[guild_id]:
-                channel = ctx.guild.get_channel(int(channel_id))
-                if channel:
-                    blacklisted_channels.append(channel.mention)
-                else:
-                    blacklisted_channels.append(f"Unknown Channel (ID: {channel_id})")
+        for channel_id in channel_blacklist:
+            channel = ctx.guild.get_channel(int(channel_id))
+            if channel:
+                blacklisted_channels.append(channel.mention)
+            else:
+                blacklisted_channels.append(f"Unknown Channel (ID: {channel_id})")
         
         # Get blacklisted categories
+        category_blacklist = await data_manager.get_blacklist("category", guild_id)
+        if not isinstance(category_blacklist, list):
+            category_blacklist = []
+            
         blacklisted_categories = []
-        if guild_id in category_blacklist:
-            for category_id in category_blacklist[guild_id]:
-                category = ctx.guild.get_channel(int(category_id))
-                if category:
-                    blacklisted_categories.append(f"**{category.name}**")
-                else:
-                    blacklisted_categories.append(f"Unknown Category (ID: {category_id})")
+        for category_id in category_blacklist:
+            category = ctx.guild.get_channel(int(category_id))
+            if category:
+                blacklisted_categories.append(f"**{category.name}**")
+            else:
+                blacklisted_categories.append(f"Unknown Category (ID: {category_id})")
         
         # Add fields to embed
         if blacklisted_channels:
@@ -238,7 +270,6 @@ def setup_admin_commands(bot):
         embed.add_field(
             name="📊 **Bot Management**",
             value=(
-                "`!pixel` - View bot status and statistics\n"
                 "`!admin_commands` - Show this help menu"
             ),
             inline=False

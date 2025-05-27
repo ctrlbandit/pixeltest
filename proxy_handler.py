@@ -1,6 +1,6 @@
 import discord
 import aiohttp
-from data_manager import global_profiles, category_blacklist, channel_blacklist
+from data_manager import global_profiles, data_manager
 
 def setup_proxy_handler(bot):
     @bot.event
@@ -10,13 +10,19 @@ def setup_proxy_handler(bot):
 
         if message.guild:
             guild_id = str(message.guild.id)
-            category_id = message.channel.category_id
+            category_id = str(message.channel.category_id) if message.channel.category_id else None
 
-            if guild_id in category_blacklist and category_id in category_blacklist[guild_id]:
-                await bot.process_commands(message)
-                return
+            # Check category blacklist
+            if category_id:
+                category_blacklist = await data_manager.get_blacklist("category", guild_id)
+                if isinstance(category_blacklist, list) and category_id in category_blacklist:
+                    await bot.process_commands(message)
+                    return
 
-            if guild_id in channel_blacklist and message.channel.id in channel_blacklist[guild_id]:
+            # Check channel blacklist
+            channel_id = str(message.channel.id)
+            channel_blacklist = await data_manager.get_blacklist("channel", guild_id)
+            if isinstance(channel_blacklist, list) and channel_id in channel_blacklist:
                 await bot.process_commands(message)
                 return
 
