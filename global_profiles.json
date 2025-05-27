@@ -1,5 +1,14 @@
 {
     "787047503115714640": {
+        "folders": {},
+        "system": {
+            "name": "Test",
+            "description": "No description provided.",
+            "avatar": null,
+            "banner": null,
+            "pronouns": "Not set",
+            "color": 9055202
+        },
         "alters": {
             "Pyro": {
                 "displayname": "Pyro",
@@ -9311,15 +9320,6 @@
                 "color": 9055202,
                 "use_embed": true
             }
-        },
-        "folders": {},
-        "system": {
-            "name": "Test",
-            "description": "No description provided.",
-            "avatar": null,
-            "banner": null,
-            "pronouns": "Not set",
-            "color": 9055202
         }
     }
 }
