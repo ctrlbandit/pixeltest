@@ -409,7 +409,7 @@ async def show(ctx, name: str):
             aliases = profile.get("aliases", [])
             alias_list = ", ".join(aliases) if aliases else "None"
             avatar_url = profile.get("avatar", None)
-            proxy_avatar_url = profile.get("proxy_avatar", None)
+            proxy_avatar_url = profile.get("proxy_avatar") or profile.get("proxyavatar", None)
             banner_url = profile.get("banner", None)
             embed_color = profile.get("color", 0x8A2BE2)  # Default to purple if no color is set
             use_embed = profile.get("use_embed", True)  # Default to True if not set
@@ -453,6 +453,10 @@ async def show(ctx, name: str):
                     embed.set_footer(text=f"Proxy Avatar for {displayname}", icon_url=proxy_avatar_url)
                 else:
                     embed.set_footer(text=f"User ID: {user_id}")
+                
+                # Add proxy avatar as a separate field if it exists and is different from main avatar
+                if proxy_avatar_url and proxy_avatar_url != avatar_url:
+                    embed.add_field(name="🔄 Proxy Avatar", value=f"[View Proxy Avatar]({proxy_avatar_url})", inline=False)
 
                 await ctx.send(embed=embed)
 
@@ -1762,7 +1766,7 @@ async def on_message(message):
         displayname = profile.get("displayname") or name
 
         # Use the proxy avatar if it exists, otherwise use the main avatar
-        proxy_avatar = profile.get("proxy_avatar") or profile.get("avatar")
+        proxy_avatar = profile.get("proxy_avatar") or profile.get("proxyavatar") or profile.get("avatar")
 
         # If the profile has a proxy set, check for it
         if proxy and proxy != "No proxy set" and message.content.startswith(proxy):
@@ -1780,16 +1784,24 @@ async def on_message(message):
                             async with session.get(proxy_avatar) as response:
                                 if response.status == 200:
                                     content_type = response.headers.get('content-type', '').lower()
-                                    if 'image/' in content_type:
+                                    # Accept various image formats including webp
+                                    if any(img_type in content_type for img_type in ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']):
                                         avatar_bytes = await response.read()
                                         # Update the webhook to use the proxy avatar
                                         await webhook.edit(avatar=avatar_bytes)
                                     else:
-                                        print(f"Invalid image type for {displayname}: {content_type}")
+                                        print(f"Unsupported image type for {displayname}: {content_type}")
+                                        # Try to use the avatar anyway since Discord might accept it
+                                        try:
+                                            avatar_bytes = await response.read()
+                                            await webhook.edit(avatar=avatar_bytes)
+                                        except:
+                                            pass
                                 else:
                                     print(f"Failed to fetch avatar for {displayname}: {response.status}")
                     except Exception as e:
                         print(f"Error setting avatar for {displayname}: {e}")
+                        # Continue without avatar if there's an error
 
                 # Send the proxied message
                 await webhook.send(
