@@ -93,7 +93,7 @@ def setup_import_export(bot):
                             if user_id not in global_profiles:
                                 global_profiles[user_id] = {"system": {}, "alters": {}, "folders": {}}
 
-                            # Import system data with all fields including tag
+                            # Import system data with all fields including tag - match PixelBot structure exactly
                             system_data = data.get("system", {})
                             if system_data:
                                 system_name = system_data.get("name", "Imported System")
@@ -112,16 +112,18 @@ def setup_import_export(bot):
                                 except (ValueError, AttributeError):
                                     color_int = 0x8A2BE2
 
+                                # Match PixelBot's exact system structure
                                 global_profiles[user_id]["system"] = {
                                     "name": system_name,
                                     "description": system_description,
-                                    "pronouns": system_pronouns,
                                     "avatar": system_avatar,
                                     "banner": system_banner,
+                                    "pronouns": system_pronouns,
                                     "color": color_int,
-                                    "tag": system_tag  # Store system tag
+                                    "tag": system_tag
                                 }
 
+                            # Ensure proper structure exists
                             if "alters" not in global_profiles[user_id]:
                                 global_profiles[user_id]["alters"] = {}
                             if "folders" not in global_profiles[user_id]:
@@ -192,7 +194,7 @@ def setup_import_export(bot):
                                     suffix = tag.get("suffix", "") or ""
 
                                     if prefix and suffix:
-                                        proxies.append(f"{prefix}text{suffix}")
+                                        proxies.append(f"{prefix}...{suffix}")
                                     elif prefix:
                                         proxies.append(prefix)
                                     elif suffix:
@@ -239,7 +241,7 @@ def setup_import_export(bot):
                             if members_imported > 0:
                                 success_parts.append(f"{members_imported} members")
                             if groups_imported > 0:
-                                success_parts.append(f"{groups_imported} groups (as folders)")
+                                success_parts.append(f"{groups_imported} groups (will be folders)")
                             
                             success_message = " and ".join(success_parts) if success_parts else "data"
                             

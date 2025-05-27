@@ -170,6 +170,7 @@ def setup_system_commands(bot):
         system_avatar = system_info.get("avatar", None)
         system_banner = system_info.get("banner", None)
         system_color = system_info.get("color", 0x8A2BE2)
+        system_tag = system_info.get("tag", None)
 
         def preserve_links(text):
             return re.sub(
@@ -180,14 +181,23 @@ def setup_system_commands(bot):
 
         system_description = preserve_links(system_description)
 
+        # Build description with system tag if it exists
+        description_parts = [
+            f"**System Name**\n{system_name}\n",
+            f"**Pronouns**\n{system_pronouns}\n"
+        ]
+        
+        if system_tag:
+            description_parts.append(f"**System Tag**\n{system_tag}\n")
+            
+        description_parts.extend([
+            f"**Description**\n{system_description}\n",
+            f"||Linked Discord Account: {ctx.author.mention}||"
+        ])
+
         embed = discord.Embed(
             title=system_name,
-            description=(
-                f"**System Name**\n{system_name}\n\n"
-                f"**Pronouns**\n{system_pronouns}\n\n"
-                f"**Description**\n{system_description}\n\n"
-                f"||Linked Discord Account: {ctx.author.mention}||"
-            ),
+            description="\n".join(description_parts),
             color=system_color
         )
 
