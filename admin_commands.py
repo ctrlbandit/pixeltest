@@ -18,10 +18,6 @@ def setup_admin_commands(bot):
         # Calculate total users across all servers
         total_users = sum(guild.member_count for guild in bot.guilds if guild.member_count)
         total_guilds = len(bot.guilds)
-        total_systems = len(global_profiles)
-        
-        # Calculate total alters across all systems
-        total_alters = sum(len(profile.get('alters', {})) for profile in global_profiles.values())
         
         embed = discord.Embed(
             title="🌌 PixelBot Status Dashboard",
@@ -47,17 +43,6 @@ def setup_admin_commands(bot):
                 f"**Total Servers:** `{total_guilds:,}`\n"
                 f"**Total Users:** `{total_users:,}`\n"
                 f"**Average Users/Server:** `{round(total_users/total_guilds) if total_guilds > 0 else 0}`"
-            ),
-            inline=True
-        )
-        
-        # System Statistics
-        embed.add_field(
-            name="👥 **System Statistics**",
-            value=(
-                f"**Total Systems:** `{total_systems:,}`\n"
-                f"**Total Alters:** `{total_alters:,}`\n"
-                f"**Average Alters/System:** `{round(total_alters/total_systems) if total_systems > 0 else 0}`"
             ),
             inline=True
         )
