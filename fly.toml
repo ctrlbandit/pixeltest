@@ -2,28 +2,11 @@ app = "pixel"
 primary_region = "ord"
 
 [build]
-  builder = "paketobuildpacks/builder:base"
-
-[env]
-  PORT = "8080"
-
-
 
 [vm]
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 512
-
-[[checks]]
-  name = "bot_alive"
-  type = "tcp"
-  port = 8080
-  interval = "30s"
-  timeout = "5s"
-  grace_period = "10s"
-
-[processes]
-  app = "python main.py"
 
 kill_signal = "SIGTERM"
 kill_timeout = 30 
