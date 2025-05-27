@@ -1,4 +1,4 @@
-app = "pixel"
+app = "pixeltest"
 primary_region = "ord"
 
 [build]
