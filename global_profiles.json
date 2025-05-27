@@ -9310,27 +9310,8 @@
                 ],
                 "color": 9055202,
                 "use_embed": true
-            },
-            "Test": {
-                "displayname": "Test",
-                "pronouns": "Not set",
-                "description": "No description provided.",
-                "avatar": "https://cdn.discordapp.com/attachments/1347273953072123994/1376988261041307780/Tumblr_l_453398103238081.jpg?ex=683753c0&is=68360240&hm=6528c37b1e5c1530373b4cd0328777adda8733c79286c78650a1fb10729b86ea&",
-                "proxyavatar": null,
-                "banner": null,
-                "proxy": "T:",
-                "aliases": [],
-                "color": 9055202,
-                "use_embed": true
             }
         },
-        "system": {
-            "name": "Test",
-            "description": "No description provided.",
-            "avatar": null,
-            "banner": null,
-            "pronouns": "Not set",
-            "color": 9055202
-        }
+        "folders": {}
     }
 }
