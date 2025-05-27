@@ -1230,11 +1230,41 @@ async def import_pluralkit(ctx):
 
                                 # Create the user system if it doesn't exist
                                 if user_id not in global_profiles:
-                                    global_profiles[user_id] = {"system": {}, "alters": {}}
+                                    global_profiles[user_id] = {"system": {}, "alters": {}, "folders": {}}
 
-                                # Ensure the "alters" key exists
+                                # Import system information
+                                system_data = data.get("system", {})
+                                if system_data:
+                                    system_name = system_data.get("name", "Imported System")
+                                    system_description = system_data.get("description", "Imported from PluralKit")
+                                    system_pronouns = system_data.get("pronouns", "Not set")
+                                    system_avatar = system_data.get("avatar_url", None)
+                                    system_banner = system_data.get("banner", None)
+                                    system_color = system_data.get("color", "#8A2BE2")
+                                    
+                                    # Convert color to integer
+                                    try:
+                                        if not system_color or system_color.strip() == "":
+                                            color_int = 0x8A2BE2
+                                        else:
+                                            color_int = int(system_color.lstrip("#"), 16)
+                                    except (ValueError, AttributeError):
+                                        color_int = 0x8A2BE2
+
+                                    global_profiles[user_id]["system"] = {
+                                        "name": system_name,
+                                        "description": system_description,
+                                        "pronouns": system_pronouns,
+                                        "avatar": system_avatar,
+                                        "banner": system_banner,
+                                        "color": color_int
+                                    }
+
+                                # Ensure the "alters" and "folders" keys exist
                                 if "alters" not in global_profiles[user_id]:
                                     global_profiles[user_id]["alters"] = {}
+                                if "folders" not in global_profiles[user_id]:
+                                    global_profiles[user_id]["folders"] = {}
 
                                 # Import each member as a profile
                                 for member in data.get("members", []):
@@ -1293,7 +1323,12 @@ async def import_pluralkit(ctx):
 
                                 # Save the imported profiles
                                 save_profiles(global_profiles)
-                                await ctx.send("✅ Your PluralKit profiles have been imported successfully!")
+                                
+                                # Count imported items
+                                member_count = len(data.get("members", []))
+                                system_imported = "system and " if data.get("system") else ""
+                                
+                                await ctx.send(f"✅ Your PluralKit {system_imported}{member_count} profiles have been imported successfully!")
                             else:
                                 await ctx.send("❌ Failed to download the file. Please try again.")
 
