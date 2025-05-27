@@ -1,12 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "python-template"
+name = "pixel"
 version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
+description = "A Discord bot designed for DID/OSDD systems to manage alters, proxying, and system organization"
+authors = [
+    {name = "ProxyPixel", email = "proxypixel@example.com"}
+]
 requires-python = ">=3.11"
 dependencies = [
     "aiofiles>=24.1.0",
     "aiohttp>=3.12.2",
     "discord-py>=2.5.2",
     "python-dotenv>=1.1.0",
+    "pymongo>=4.6.0",
+    "motor>=3.3.2",
+    "dnspython>=2.4.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/ProxyPixel/Pixel"

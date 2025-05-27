@@ -10,6 +10,9 @@ from import_export import setup_import_export
 from utility_commands import setup_utility_commands
 from proxy_handler import setup_proxy_handler
 
+# Load environment variables from .env file
+load_dotenv()
+
 # Set up all command modules
 setup_system_commands(bot)
 setup_alter_commands(bot)
@@ -19,9 +22,6 @@ setup_import_export(bot)
 setup_utility_commands(bot)
 setup_proxy_handler(bot)
 
-# Load environment variables from .env file
-load_dotenv()
-
 # Run the bot
 if __name__ == "__main__":
-    bot.run(os.getenv("NEW_BOT_TOKEN"))
+    bot.run(os.getenv("DISCORD_TOKEN"))
