@@ -606,8 +606,8 @@ async def system(ctx):
     user_data = global_profiles.get(user_id, {})
     system_info = user_data.get("system", {})
 
-    # Check if the system exists
-    if not system_info:
+    # Check if the system exists and has a name
+    if not system_info or not system_info.get("name"):
         await ctx.send("❌ You don't have a system set up yet. Use `!create_system` to create one.")
         return
 
