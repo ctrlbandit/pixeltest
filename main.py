@@ -1279,7 +1279,7 @@ async def import_pluralkit(ctx):
 
                                     # Create the alter profile
                                     global_profiles[user_id]["alters"][name] = {
-                                        "displayname": display_name,
+                                        "displayname": display_name if display_name else name,
                                         "pronouns": pronouns,
                                         "description": description,
                                         "avatar": avatar,
@@ -1723,13 +1723,13 @@ async def on_message(message):
     # Check each profile for a matching proxy
     for name, profile in user_profiles.items():
         proxy = profile.get("proxy")
-        displayname = profile.get("displayname", name)
+        displayname = profile.get("displayname") or name
 
         # Use the proxy avatar if it exists, otherwise use the main avatar
         proxy_avatar = profile.get("proxy_avatar") or profile.get("avatar")
 
         # If the profile has a proxy set, check for it
-        if proxy and message.content.startswith(proxy):
+        if proxy and proxy != "No proxy set" and message.content.startswith(proxy):
             # Remove the proxy from the message
             clean_message = message.content[len(proxy):].strip()
 
@@ -1743,9 +1743,13 @@ async def on_message(message):
                         async with aiohttp.ClientSession() as session:
                             async with session.get(proxy_avatar) as response:
                                 if response.status == 200:
-                                    avatar_bytes = await response.read()
-                                    # Update the webhook to use the proxy avatar
-                                    await webhook.edit(avatar=avatar_bytes)
+                                    content_type = response.headers.get('content-type', '').lower()
+                                    if 'image/' in content_type:
+                                        avatar_bytes = await response.read()
+                                        # Update the webhook to use the proxy avatar
+                                        await webhook.edit(avatar=avatar_bytes)
+                                    else:
+                                        print(f"Invalid image type for {displayname}: {content_type}")
                                 else:
                                     print(f"Failed to fetch avatar for {displayname}: {response.status}")
                     except Exception as e:
