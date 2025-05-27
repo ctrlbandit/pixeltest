@@ -1,5 +1,10 @@
+# fly.toml app configuration file generated for pixeltest on 2025-05-27T20:42:03Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = "pixeltest"
-primary_region = "ord"
+primary_region = "atl"
 
 [build]
 
@@ -9,4 +14,4 @@ primary_region = "ord"
   memory_mb = 512
 
 kill_signal = "SIGTERM"
-kill_timeout = 30 
+kill_timeout = 30
