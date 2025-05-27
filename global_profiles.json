@@ -9323,6 +9323,14 @@
                 "color": 9055202,
                 "use_embed": true
             }
+        },
+        "system": {
+            "name": "Test",
+            "description": "No description provided.",
+            "avatar": null,
+            "banner": null,
+            "pronouns": "Not set",
+            "color": 9055202
         }
     }
 }
