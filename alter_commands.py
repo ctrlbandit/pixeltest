@@ -276,7 +276,7 @@ def setup_alter_commands(bot):
             
             await ctx.send("\n".join(message))
 
-    @bot.command(name="list_profiles", aliases=["list", "system"])
+    @bot.command(name="list_profiles", aliases=["list"])
     async def list_profiles(ctx):
         user_id = str(ctx.author.id)
         profile = await data_manager.get_user_profile(user_id)

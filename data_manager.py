@@ -24,8 +24,12 @@ class MongoDataManager:
         
     async def initialize(self):
         """Initialize MongoDB connection"""
-        mongodb_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        mongodb_uri = os.getenv("MONGODB_URI")
         database_name = os.getenv("MONGODB_DATABASE", "pixel_did_bot")
+        
+        if not mongodb_uri:
+            logger.warning("MONGODB_URI not set. Running in local mode with in-memory storage only.")
+            return
         
         try:
             self.client = AsyncIOMotorClient(mongodb_uri)
@@ -43,7 +47,7 @@ class MongoDataManager:
             # Load initial data into cache
             await self._load_cache()
             
-            logger.info("MongoDB connection established successfully")
+            logger.info(f"MongoDB connection established successfully to database: {database_name}")
             
         except ConnectionFailure as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
@@ -52,25 +56,25 @@ class MongoDataManager:
             
     async def _create_indexes(self):
         """Create database indexes for better performance"""
-        if self.profiles_collection:
+        if self.profiles_collection is not None:
             await self.profiles_collection.create_index("user_id", unique=True)
-        if self.blacklists_collection:
+        if self.blacklists_collection is not None:
             await self.blacklists_collection.create_index([("type", 1), ("guild_id", 1)])
-        if self.system_settings_collection:
+        if self.system_settings_collection is not None:
             await self.system_settings_collection.create_index("guild_id", unique=True)
             
     async def _load_cache(self):
         """Load frequently accessed data into cache"""
         try:
             # Load user profiles
-            if self.profiles_collection:
+            if self.profiles_collection is not None:
                 async for profile in self.profiles_collection.find():
                     user_id = profile.get('user_id')
                     if user_id:
                         self._cache['profiles'][user_id] = profile
                         
             # Load blacklists
-            if self.blacklists_collection:
+            if self.blacklists_collection is not None:
                 async for blacklist in self.blacklists_collection.find():
                     blacklist_type = blacklist.get('type')
                     guild_id = blacklist.get('guild_id')
@@ -118,7 +122,7 @@ class MongoDataManager:
             }
         }
         
-        if self.profiles_collection:
+        if self.profiles_collection is not None:
             try:
                 profile = await self.profiles_collection.find_one({"user_id": user_id})
                 if profile:
@@ -142,7 +146,7 @@ class MongoDataManager:
             # Update cache
             self._cache['profiles'][user_id] = profile
             
-            if self.profiles_collection:
+            if self.profiles_collection is not None:
                 await self.profiles_collection.replace_one(
                     {"user_id": user_id},
                     profile,
@@ -198,7 +202,7 @@ class MongoDataManager:
             if guild_id:
                 return self._cache['blacklists'][blacklist_type].get(guild_id, {})
             return self._cache['blacklists'][blacklist_type]
-    return {}
+        return {}
     
     async def save_blacklist(self, blacklist_type: str, guild_id: str, data: Dict[str, Any]) -> bool:
         """Save blacklist data"""
@@ -208,7 +212,7 @@ class MongoDataManager:
                 self._cache['blacklists'][blacklist_type] = {}
             self._cache['blacklists'][blacklist_type][guild_id] = data
             
-            if self.blacklists_collection:
+            if self.blacklists_collection is not None:
                 await self.blacklists_collection.replace_one(
                     {"type": blacklist_type, "guild_id": guild_id},
                     {"type": blacklist_type, "guild_id": guild_id, "data": data},
