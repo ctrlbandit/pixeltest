@@ -221,7 +221,7 @@ async def delete_system(ctx):
 
 # Create a new profile with optional embed prompt
 @bot.command(name="create")
-async def create(ctx, name: str, pronouns: str, *, description: str = "No description provided."):
+async def create(ctx, name: str, pronouns: str = "Not set", *, description: str = "No description provided."):
     user_id = str(ctx.author.id)
 
     # Ensure the user's system exists
