@@ -1,4 +1,4 @@
-app = "pixel-did-osdd-bot"
+app = "pixel"
 primary_region = "ord"
 
 [build]
@@ -7,14 +7,13 @@ primary_region = "ord"
 [env]
   PORT = "8080"
 
-# Discord bots don't serve HTTP traffic, so we don't need http_service or services sections
+
 
 [vm]
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 512
 
-# Health check to ensure the bot is running
 [[checks]]
   name = "bot_alive"
   type = "tcp"
@@ -23,10 +22,8 @@ primary_region = "ord"
   timeout = "5s"
   grace_period = "10s"
 
-# Process configuration
 [processes]
   app = "python main.py"
 
-# Kill configuration for graceful shutdown
 kill_signal = "SIGTERM"
 kill_timeout = 30 
