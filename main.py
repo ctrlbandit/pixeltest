@@ -635,9 +635,9 @@ async def system(ctx):
     embed = discord.Embed(
         title=system_name,
         description=(
-            f"**System Name:** {system_name}\n"
-            f"**Pronouns:** {system_pronouns}\n"
-            f"**Description:** {system_description}\n\n"
+            f"**System Name**\n{system_name}\n\n"
+            f"**Pronouns**\n{system_pronouns}\n\n"
+            f"**Description**\n{system_description}\n\n"
             f"||Linked Discord Account: {ctx.author.mention}||"
         ),
         color=system_color
