@@ -9312,6 +9312,14 @@
                 "use_embed": true
             }
         },
-        "folders": {}
+        "folders": {},
+        "system": {
+            "name": "Test",
+            "description": "No description provided.",
+            "avatar": null,
+            "banner": null,
+            "pronouns": "Not set",
+            "color": 9055202
+        }
     }
 }
