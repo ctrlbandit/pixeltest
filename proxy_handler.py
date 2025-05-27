@@ -13,9 +13,11 @@ def setup_proxy_handler(bot):
             category_id = message.channel.category_id
 
             if guild_id in category_blacklist and category_id in category_blacklist[guild_id]:
+                await bot.process_commands(message)
                 return
 
             if guild_id in channel_blacklist and message.channel.id in channel_blacklist[guild_id]:
+                await bot.process_commands(message)
                 return
 
         user_id = str(message.author.id)
@@ -66,7 +68,7 @@ def setup_proxy_handler(bot):
             else:
                 await message.channel.send("Invalid autoproxy command. Use: `latch`, `unlatch`, `front`, or `off`.")
             
-            return
+            return  # Don't process other commands for autoproxy
 
         user_profiles = global_profiles.get(user_id, {}).get("alters", {})
 
@@ -182,4 +184,5 @@ def setup_proxy_handler(bot):
 
                 return
 
+        # Only process commands if no proxy was triggered
         await bot.process_commands(message)
