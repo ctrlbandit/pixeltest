@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 from bot_setup import bot
 from data_manager import global_profiles, category_blacklist, channel_blacklist
 from system_commands import setup_system_commands
@@ -17,6 +18,9 @@ setup_admin_commands(bot)
 setup_import_export(bot)
 setup_utility_commands(bot)
 setup_proxy_handler(bot)
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Run the bot
 if __name__ == "__main__":
