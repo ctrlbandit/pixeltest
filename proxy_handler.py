@@ -32,10 +32,10 @@ def setup_proxy_handler(bot):
             command = parts[1].lower()
             
             if user_id not in global_profiles:
-                global_profiles[user_id] = {"alters": {}, "autoproxy": {"mode": "off", "alter": None}}
+                global_profiles[user_id] = {"alters": {}, "autoproxy": {"mode": "off", "alter": None, "last_proxied": None}}
             
             if "autoproxy" not in global_profiles[user_id]:
-                global_profiles[user_id]["autoproxy"] = {"mode": "off", "alter": None}
+                global_profiles[user_id]["autoproxy"] = {"mode": "off", "alter": None, "last_proxied": None}
             
             if command == "off":
                 global_profiles[user_id]["autoproxy"]["mode"] = "off"
@@ -49,6 +49,7 @@ def setup_proxy_handler(bot):
                 
             elif command == "latch":
                 if len(parts) >= 3:
+                    # Traditional latch with specific alter name
                     alter_name = " ".join(parts[2:])
                     user_alters = global_profiles[user_id].get("alters", {})
                     if alter_name in user_alters:
@@ -58,7 +59,9 @@ def setup_proxy_handler(bot):
                     else:
                         await message.channel.send(f"Alter '{alter_name}' not found.")
                 else:
-                    await message.channel.send("Please specify an alter name for latch mode.")
+                    # New latch mode - use last proxied alter
+                    global_profiles[user_id]["autoproxy"]["mode"] = "latch"
+                    await message.channel.send("Last proxied alter will be in latch mode.")
                     
             elif command == "unlatch":
                 global_profiles[user_id]["autoproxy"]["mode"] = "front"
@@ -73,13 +76,18 @@ def setup_proxy_handler(bot):
         user_profiles = global_profiles.get(user_id, {}).get("alters", {})
 
         # Check for autoproxy
-        autoproxy_settings = global_profiles.get(user_id, {}).get("autoproxy", {"mode": "off", "alter": None})
+        autoproxy_settings = global_profiles.get(user_id, {}).get("autoproxy", {"mode": "off", "alter": None, "last_proxied": None})
         
         if autoproxy_settings["mode"] != "off" and not any(message.content.startswith(proxy) for proxy in [profile.get("proxy", "") for profile in user_profiles.values() if profile.get("proxy")]):
             target_alter = None
             
-            if autoproxy_settings["mode"] == "latch" and autoproxy_settings["alter"]:
-                target_alter = autoproxy_settings["alter"]
+            if autoproxy_settings["mode"] == "latch":
+                if autoproxy_settings["alter"]:
+                    # Use specifically set alter
+                    target_alter = autoproxy_settings["alter"]
+                elif autoproxy_settings.get("last_proxied"):
+                    # Use last proxied alter
+                    target_alter = autoproxy_settings["last_proxied"]
             elif autoproxy_settings["mode"] == "front":
                 # For front mode, use the first alter or implement your front logic
                 if user_profiles:
@@ -90,8 +98,16 @@ def setup_proxy_handler(bot):
                 displayname = profile.get("displayname") or target_alter
                 proxy_avatar = profile.get("proxy_avatar") or profile.get("proxyavatar") or profile.get("avatar")
                 
+                # Get system tag for display name
+                system_info = global_profiles.get(user_id, {}).get("system", {})
+                system_tag = system_info.get("tag", "")
+                webhook_name = f"{displayname} | {system_tag}" if system_tag else displayname
+                
+                # Update last proxied alter
+                global_profiles[user_id]["autoproxy"]["last_proxied"] = target_alter
+                
                 if message.guild:
-                    webhook = await message.channel.create_webhook(name=displayname)
+                    webhook = await message.channel.create_webhook(name=webhook_name)
 
                     if proxy_avatar:
                         try:
@@ -116,7 +132,7 @@ def setup_proxy_handler(bot):
 
                     await webhook.send(
                         content=message.content,
-                        username=displayname,
+                        username=webhook_name,
                         allowed_mentions=discord.AllowedMentions.none()
                     )
 
@@ -138,8 +154,17 @@ def setup_proxy_handler(bot):
             if proxy and proxy != "No proxy set" and message.content.startswith(proxy):
                 clean_message = message.content[len(proxy):].strip()
 
+                # Update last proxied alter for latch mode
+                if user_id in global_profiles and "autoproxy" in global_profiles[user_id]:
+                    global_profiles[user_id]["autoproxy"]["last_proxied"] = name
+
+                # Get system tag for display name
+                system_info = global_profiles.get(user_id, {}).get("system", {})
+                system_tag = system_info.get("tag", "")
+                webhook_name = f"{displayname} | {system_tag}" if system_tag else displayname
+
                 if message.guild:
-                    webhook = await message.channel.create_webhook(name=displayname)
+                    webhook = await message.channel.create_webhook(name=webhook_name)
 
                     if proxy_avatar:
                         try:
@@ -164,7 +189,7 @@ def setup_proxy_handler(bot):
 
                     await webhook.send(
                         content=clean_message,
-                        username=displayname,
+                        username=webhook_name,
                         allowed_mentions=discord.AllowedMentions.none()
                     )
 
@@ -178,7 +203,7 @@ def setup_proxy_handler(bot):
                 else:
                     await message.channel.send(
                         content=clean_message,
-                        username=displayname,
+                        username=webhook_name,
                         allowed_mentions=discord.AllowedMentions.none()
                     )
 

@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from data_manager import global_profiles, save_profiles
@@ -38,14 +37,14 @@ def setup_system_commands(bot):
 
         system = global_profiles[user_id]["system"]
 
-        await ctx.send("What would you like to edit? (name, description, avatar, banner, pronouns, color)")
+        await ctx.send("What would you like to edit? (name, description, avatar, banner, pronouns, color, tag)")
 
         try:
             field_msg = await bot.wait_for("message", timeout=60, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
             field = field_msg.content.strip().lower()
 
-            if field not in ["name", "description", "avatar", "banner", "pronouns", "color"]:
-                await ctx.send(f"❌ Invalid field '{field}'. Use 'name', 'description', 'avatar', 'banner', 'pronouns', or 'color'.")
+            if field not in ["name", "description", "avatar", "banner", "pronouns", "color", "tag"]:
+                await ctx.send(f"❌ Invalid field '{field}'. Use 'name', 'description', 'avatar', 'banner', 'pronouns', 'color', or 'tag'.")
                 return
 
             if field in ["avatar", "banner"]:
@@ -119,18 +118,41 @@ def setup_system_commands(bot):
             )
 
             if confirmation.content.strip().upper() == "CONFIRM":
-                del global_profiles[user_id]["system"]
-
-                if "alters" in global_profiles[user_id]:
-                    del global_profiles[user_id]["alters"]
-
+                del global_profiles[user_id]
                 save_profiles(global_profiles)
-                await ctx.send("✅ Your system has been **permanently** deleted.")
+                await ctx.send("✅ Your system has been deleted successfully.")
             else:
-                await ctx.send("❌ System deletion **canceled**.")
+                await ctx.send("❌ System deletion canceled.")
 
         except TimeoutError:
-            await ctx.send("❌ You took too long to confirm. System deletion **canceled**.")
+            await ctx.send("❌ System deletion canceled. You took too long to confirm.")
+
+    @bot.command(name="set_system_tag")
+    async def set_system_tag(ctx, *, tag: str = None):
+        """Set or update your system tag"""
+        user_id = str(ctx.author.id)
+
+        if user_id not in global_profiles or "system" not in global_profiles[user_id]:
+            await ctx.send("❌ You don't have a system set up yet. Use `!create_system` to create one.")
+            return
+
+        if tag is None:
+            await ctx.send("💬 Please enter your system tag (or 'none' to remove):")
+            try:
+                tag_msg = await bot.wait_for("message", timeout=120, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+                tag = tag_msg.content.strip()
+            except TimeoutError:
+                await ctx.send("❌ You took too long to respond. Please try the command again.")
+                return
+
+        if tag.lower() == "none":
+            global_profiles[user_id]["system"]["tag"] = None
+            save_profiles(global_profiles)
+            await ctx.send("✅ System tag removed successfully!")
+        else:
+            global_profiles[user_id]["system"]["tag"] = tag
+            save_profiles(global_profiles)
+            await ctx.send(f"✅ System tag set to: **{tag}**")
 
     @bot.command(name="system")
     async def system(ctx):

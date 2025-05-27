@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
@@ -162,7 +161,11 @@ def setup_utility_commands(bot):
             value=(
                 "`!proxyavatar <name>` - Set a separate avatar for proxying.\n"
                 "`!proxy` - Send a proxied message.\n"
-                "`!set_proxy <name> <proxy>` - Set a proxy for an alter."
+                "`!set_proxy <name> <proxy>` - Set a proxy for an alter.\n"
+                "`!autoproxy latch [alter_name]` - Auto-proxy as specific alter or last proxied.\n"
+                "`!autoproxy unlatch` - Switch to front mode.\n"
+                "`!autoproxy front` - Auto-proxy as first alter.\n"
+                "`!autoproxy off` - Disable autoproxy."
             ),
             inline=False
         )
