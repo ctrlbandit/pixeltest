@@ -1,41 +1,54 @@
 import discord
 from discord.ext import commands
-from data_manager import global_profiles, save_profiles
+from data_manager import data_manager
 import re
 
 def setup_system_commands(bot):
     @bot.command(name="create_system")
     async def create_system(ctx, *, system_name: str):
         user_id = str(ctx.author.id)
-
-        if "system" in global_profiles.get(user_id, {}):
+        
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if profile.get("system", {}).get("name"):
             await ctx.send("You already have a system set up. Use `!edit_system` to modify it.")
             return
 
-        if user_id not in global_profiles:
-            global_profiles[user_id] = {"system": {}, "alters": {}, "folders": {}}
-
-        global_profiles[user_id]["system"] = {
+        profile["system"] = {
             "name": system_name,
             "description": "No description provided.",
             "avatar": None,
             "banner": None,
             "pronouns": "Not set",
-            "color": 0x8A2BE2
+            "color": 0x8A2BE2,
+            "created_at": None,
+            "front_history": [],
+            "system_avatar": None,
+            "system_banner": None,
+            "privacy_settings": {
+                "show_front": True,
+                "show_member_count": True,
+                "allow_member_list": True
+            }
         }
 
-        save_profiles(global_profiles)
-        await ctx.send(f"✅ System '{system_name}' created successfully!")
+        success = await data_manager.save_user_profile(user_id, profile)
+        if success:
+            await ctx.send(f"✅ System '{system_name}' created successfully!")
+        else:
+            await ctx.send("❌ Failed to create system. Please try again.")
 
     @bot.command(name="edit_system")
     async def edit_system(ctx):
         user_id = str(ctx.author.id)
-
-        if user_id not in global_profiles or "system" not in global_profiles[user_id]:
+        
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if not profile.get("system", {}).get("name"):
             await ctx.send("❌ You don't have a system set up yet. Use `!create_system` to create one.")
             return
 
-        system = global_profiles[user_id]["system"]
+        system = profile["system"]
 
         await ctx.send("What would you like to edit? (name, description, avatar, banner, pronouns, color, tag)")
 
@@ -62,7 +75,7 @@ def setup_system_commands(bot):
                         return
 
                     system[field] = image_url
-                    save_profiles(global_profiles)
+                    await data_manager.save_user_profile(user_id, profile)
                     await ctx.send(f"✅ {field.capitalize()} for your system updated successfully!")
                     return
 
@@ -86,7 +99,7 @@ def setup_system_commands(bot):
                     return
 
                 system["color"] = color_int
-                save_profiles(global_profiles)
+                await data_manager.save_user_profile(user_id, profile)
                 await ctx.send(f"✅ Color for your system updated successfully!")
                 return
 
@@ -94,7 +107,7 @@ def setup_system_commands(bot):
             value_msg = await bot.wait_for("message", timeout=120, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
             system[field] = value_msg.content.strip()
 
-            save_profiles(global_profiles)
+            await data_manager.save_user_profile(user_id, profile)
             await ctx.send(f"✅ System **{system.get('name', 'Unnamed System')}** updated successfully!")
 
         except TimeoutError:
@@ -103,8 +116,10 @@ def setup_system_commands(bot):
     @bot.command(name="delete_system")
     async def delete_system(ctx):
         user_id = str(ctx.author.id)
-
-        if user_id not in global_profiles or "system" not in global_profiles[user_id]:
+        
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if not profile.get("system", {}).get("name"):
             await ctx.send("❌ You don't have a system set up yet.")
             return
 
@@ -118,8 +133,33 @@ def setup_system_commands(bot):
             )
 
             if confirmation.content.strip().upper() == "CONFIRM":
-                del global_profiles[user_id]
-                save_profiles(global_profiles)
+                # Reset to default profile
+                default_profile = {
+                    "user_id": user_id,
+                    "system": {
+                        "name": None,
+                        "description": None,
+                        "pronouns": None,
+                        "created_at": None,
+                        "front_history": [],
+                        "system_avatar": None,
+                        "system_banner": None,
+                        "privacy_settings": {
+                            "show_front": True,
+                            "show_member_count": True,
+                            "allow_member_list": True
+                        }
+                    },
+                    "alters": {},
+                    "folders": {},
+                    "settings": {
+                        "default_proxy_mode": "webhook",
+                        "auto_delete_commands": True,
+                        "dm_proxy_enabled": False,
+                        "timezone": "UTC"
+                    }
+                }
+                await data_manager.save_user_profile(user_id, default_profile)
                 await ctx.send("✅ Your system has been deleted successfully.")
             else:
                 await ctx.send("❌ System deletion canceled.")
@@ -131,8 +171,10 @@ def setup_system_commands(bot):
     async def set_system_tag(ctx, *, tag: str = None):
         """Set or update your system tag"""
         user_id = str(ctx.author.id)
-
-        if user_id not in global_profiles or "system" not in global_profiles[user_id]:
+        
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if not profile.get("system", {}).get("name"):
             await ctx.send("❌ You don't have a system set up yet. Use `!create_system` to create one.")
             return
 
@@ -146,19 +188,19 @@ def setup_system_commands(bot):
                 return
 
         if tag.lower() == "none":
-            global_profiles[user_id]["system"]["tag"] = None
-            save_profiles(global_profiles)
+            profile["system"]["tag"] = None
+            await data_manager.save_user_profile(user_id, profile)
             await ctx.send("✅ System tag removed successfully!")
         else:
-            global_profiles[user_id]["system"]["tag"] = tag
-            save_profiles(global_profiles)
+            profile["system"]["tag"] = tag
+            await data_manager.save_user_profile(user_id, profile)
             await ctx.send(f"✅ System tag set to: **{tag}**")
 
     @bot.command(name="system")
     async def system(ctx):
         user_id = str(ctx.author.id)
-        user_data = global_profiles.get(user_id, {})
-        system_info = user_data.get("system", {})
+        profile = await data_manager.get_user_profile(user_id)
+        system_info = profile.get("system", {})
 
         if not system_info or not system_info.get("name"):
             await ctx.send("❌ You don't have a system set up yet. Use `!create_system` to create one.")
@@ -216,9 +258,9 @@ def setup_system_commands(bot):
     @bot.command(name="wipe_alters")
     async def wipe_alters(ctx):
         user_id = str(ctx.author.id)
-
-        user_data = global_profiles.get(user_id, {})
-        if not user_data.get("alters"):
+        
+        profile = await data_manager.get_user_profile(user_id)
+        if not profile.get("alters"):
             await ctx.send("You don't have any alters to wipe.")
             return
 
@@ -232,8 +274,8 @@ def setup_system_commands(bot):
             )
 
             if confirmation.content.strip().upper() == "CONFIRM":
-                global_profiles[user_id]["alters"] = {}
-                save_profiles(global_profiles)
+                profile["alters"] = {}
+                await data_manager.save_user_profile(user_id, profile)
                 await ctx.send("✅ All alters have been wiped from your system.")
             else:
                 await ctx.send("❌ Wipe canceled. Your alters are safe.")

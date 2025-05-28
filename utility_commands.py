@@ -204,12 +204,18 @@ def setup_utility_commands(bot):
                     # Page 6 - Admin Commands
                     {
                         "title": "🔧 Admin Commands (Admin Only)",
-                        "description": "**Channel & Category Management:**\n\n"
+                        "description": "**Bot Status & Information:**\n\n"
+                                     "`!pixel` - Show bot status dashboard with connection info and server stats\n\n"
+                                     "**Channel & Category Management:**\n\n"
                                      "`!blacklist_channel <channel>` - Blacklist channel from proxy detection\n"
                                      "`!blacklist_category <category>` - Blacklist entire category from proxy detection\n"
-                                     "`!list_blacklists` - List all blacklisted channels and categories\n"
-                                     "`!admin_commands` - Display all admin commands\n\n"
-                                     "**Note:** These commands require administrator permissions in the server.",
+                                     "`!unblacklist_channel <channel>` - Remove channel from blacklist\n"
+                                     "`!unblacklist_category <category>` - Remove category from blacklist\n"
+                                     "`!list_blacklists` - List all blacklisted channels and categories\n\n"
+                                     "**Utility:**\n\n"
+                                     "`!admin_commands` - Display all admin commands\n"
+                                     "`!set_suggestion_channel <channel>` - Set channel for anonymous suggestions\n\n"
+                                     "**Note:** All commands require administrator permissions in the server.",
                         "color": 0x8A2BE2
                     },
                     # Page 7 - Utility Commands
