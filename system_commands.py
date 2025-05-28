@@ -173,10 +173,12 @@ def setup_system_commands(bot):
         system_tag = system_info.get("tag", None)
 
         def preserve_links(text):
+            if text is None:
+                return "No description provided."
             return re.sub(
                 r"(?<!\\)\[([^\]]+)\]\((https?://[^\s)]+)\)",
                 r"[\1](\2)",
-                text
+                str(text)
             )
 
         system_description = preserve_links(system_description)

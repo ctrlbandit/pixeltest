@@ -387,15 +387,179 @@ def setup_alter_commands(bot):
     async def remove_alias(ctx, name: str, *, alias: str):
         user_id = str(ctx.author.id)
         profile = await data_manager.get_user_profile(user_id)
-        user_profiles = profile.get("alters", {})
         
-        if name not in user_profiles:
+        if name not in profile.get("alters", {}):
             await ctx.send(f"❌ Alter '{name}' does not exist.")
             return
-        if alias not in user_profiles[name].get("aliases", []):
+
+        alter = profile["alters"][name]
+        aliases = alter.get("aliases", [])
+
+        if alias not in aliases:
             await ctx.send(f"❌ Alias '{alias}' does not exist for alter '{name}'.")
             return
-            
-        user_profiles[name]["aliases"].remove(alias)
+
+        aliases.remove(alias)
+        alter["aliases"] = aliases
+
         await data_manager.save_user_profile(user_id, profile)
-        await ctx.send(f"✅ Alias '{alias}' removed from alter '{name}' successfully!")
+        await ctx.send(f"✅ Alias '{alias}' removed from alter '{name}'.")
+
+    @bot.command(name="set_proxy")
+    async def set_proxy(ctx, name: str, *, proxy: str):
+        user_id = str(ctx.author.id)
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if name not in profile.get("alters", {}):
+            await ctx.send(f"❌ Alter '{name}' does not exist.")
+            return
+
+        alter = profile["alters"][name]
+        alter["proxy"] = proxy
+
+        await data_manager.save_user_profile(user_id, profile)
+        await ctx.send(f"✅ Proxy for alter '{name}' set to: `{proxy}`")
+
+    @bot.command(name="proxy")
+    async def proxy_command(ctx, name: str, *, message: str):
+        user_id = str(ctx.author.id)
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if name not in profile.get("alters", {}):
+            await ctx.send(f"❌ Alter '{name}' does not exist.")
+            return
+
+        alter = profile["alters"][name]
+        displayname = alter.get("displayname", name)
+        proxy_avatar = alter.get("proxy_avatar") or alter.get("proxyavatar") or alter.get("avatar")
+        
+        # Get system tag for display name
+        system_info = profile.get("system", {})
+        system_tag = system_info.get("tag", "")
+        webhook_name = f"{displayname} {system_tag}" if system_tag else displayname
+
+        if ctx.guild:
+            webhook = await ctx.channel.create_webhook(name=webhook_name)
+
+            # ALWAYS try to set proxy avatar - NO EXCEPTIONS
+            if proxy_avatar:
+                try:
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(proxy_avatar) as response:
+                            if response.status == 200:
+                                avatar_bytes = await response.read()
+                                await webhook.edit(avatar=avatar_bytes)
+                                print(f"✅ Successfully set proxy avatar for {displayname}")
+                            else:
+                                print(f"⚠️ Failed to fetch avatar for {displayname}: HTTP {response.status}")
+                except Exception as e:
+                    print(f"⚠️ Error setting avatar for {displayname}: {e}")
+                    # Continue anyway - don't let avatar errors stop the proxy
+            else:
+                print(f"⚠️ No proxy avatar set for {displayname}")
+
+            await webhook.send(
+                content=message,
+                username=webhook_name,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+
+            try:
+                await ctx.message.delete()
+            except discord.Forbidden:
+                print(f"⚠️ Missing permissions to delete message in {ctx.channel.name}")
+
+            await webhook.delete()
+        else:
+            await ctx.send(f"**{webhook_name}:** {message}")
+
+    @bot.command(name="proxyavatar")
+    async def proxyavatar(ctx, name: str):
+        user_id = str(ctx.author.id)
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if name not in profile.get("alters", {}):
+            await ctx.send(f"❌ Alter '{name}' does not exist.")
+            return
+
+        await ctx.send(f"📂 Please send the new **proxy avatar** for {name} as an **attachment** or a **direct image URL**.")
+        
+        try:
+            image_msg = await bot.wait_for("message", timeout=120, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+
+            if image_msg.attachments:
+                image_url = image_msg.attachments[0].url
+            elif image_msg.content.startswith("http"):
+                image_url = image_msg.content.strip()
+            else:
+                await ctx.send("❌ Invalid proxy avatar input. Please provide a direct image URL or attachment.")
+                return
+
+            alter = profile["alters"][name]
+            alter["proxy_avatar"] = image_url
+
+            await data_manager.save_user_profile(user_id, profile)
+            await ctx.send(f"✅ Proxy avatar for alter '{name}' updated successfully!")
+
+        except TimeoutError:
+            await ctx.send("❌ You took too long to respond. Please try the command again.")
+
+    @bot.command(name="autoproxy")
+    async def autoproxy_command(ctx, mode: str = None, *, alter_name: str = None):
+        user_id = str(ctx.author.id)
+        profile = await data_manager.get_user_profile(user_id)
+        
+        if "autoproxy" not in profile:
+            profile["autoproxy"] = {"mode": "off", "alter": None, "last_proxied": None}
+        
+        if mode is None:
+            await ctx.send("Usage: `!autoproxy <latch|unlatch|front|off> [alter_name]`")
+            return
+            
+        mode = mode.lower()
+        
+        if mode == "off":
+            profile["autoproxy"]["mode"] = "off"
+            profile["autoproxy"]["alter"] = None
+            await data_manager.save_user_profile(user_id, profile)
+            await ctx.send("Autoproxy disabled.")
+            
+        elif mode == "front":
+            if alter_name:
+                user_alters = profile.get("alters", {})
+                if alter_name in user_alters:
+                    profile["autoproxy"]["mode"] = "front"
+                    profile["autoproxy"]["alter"] = alter_name
+                    await data_manager.save_user_profile(user_id, profile)
+                    await ctx.send(f"✅ Autoproxy now set to front mode for {alter_name}!")
+                else:
+                    await ctx.send(f"Alter '{alter_name}' not found.")
+            else:
+                await ctx.send("Usage: `!autoproxy front <alter_name>`")
+                
+        elif mode == "latch":
+            if alter_name:
+                # Traditional latch with specific alter name
+                user_alters = profile.get("alters", {})
+                if alter_name in user_alters:
+                    profile["autoproxy"]["mode"] = "latch"
+                    profile["autoproxy"]["alter"] = alter_name
+                    await data_manager.save_user_profile(user_id, profile)
+                    await ctx.send(f"✅ Autoproxy latched to {alter_name}.")
+                else:
+                    await ctx.send(f"Alter '{alter_name}' not found.")
+            else:
+                # New latch mode - use last proxied alter
+                profile["autoproxy"]["mode"] = "latch"
+                await data_manager.save_user_profile(user_id, profile)
+                await ctx.send("✅ Last proxied alter will be in latch mode in this server!\n**Tip:** To turn off latch mode do `!autoproxy unlatch`, you can also switch to front mode with `!autoproxy front <name>` if you'd like!")
+                
+        elif mode == "unlatch":
+            profile["autoproxy"]["mode"] = "off"
+            profile["autoproxy"]["alter"] = None
+            await data_manager.save_user_profile(user_id, profile)
+            await ctx.send("✅ Autoproxy unlatched and disabled.")
+            
+        else:
+            await ctx.send("Invalid autoproxy command. Use: `latch`, `unlatch`, `front`, or `off`.")

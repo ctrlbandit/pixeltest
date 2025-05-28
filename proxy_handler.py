@@ -1,6 +1,6 @@
 import discord
 import aiohttp
-from data_manager import global_profiles, data_manager
+from data_manager import global_profiles, category_blacklist, channel_blacklist
 
 def setup_proxy_handler(bot):
     @bot.event
@@ -10,19 +10,13 @@ def setup_proxy_handler(bot):
 
         if message.guild:
             guild_id = str(message.guild.id)
-            category_id = str(message.channel.category_id) if message.channel.category_id else None
+            category_id = message.channel.category_id
 
-            # Check category blacklist
-            if category_id:
-                category_blacklist = await data_manager.get_blacklist("category", guild_id)
-                if isinstance(category_blacklist, list) and category_id in category_blacklist:
-                    await bot.process_commands(message)
-                    return
+            if guild_id in category_blacklist and category_id in category_blacklist[guild_id]:
+                await bot.process_commands(message)
+                return
 
-            # Check channel blacklist
-            channel_id = str(message.channel.id)
-            channel_blacklist = await data_manager.get_blacklist("channel", guild_id)
-            if isinstance(channel_blacklist, list) and channel_id in channel_blacklist:
+            if guild_id in channel_blacklist and message.channel.id in channel_blacklist[guild_id]:
                 await bot.process_commands(message)
                 return
 
@@ -49,9 +43,17 @@ def setup_proxy_handler(bot):
                 await message.channel.send("Autoproxy disabled.")
                 
             elif command == "front":
-                global_profiles[user_id]["autoproxy"]["mode"] = "front"
-                global_profiles[user_id]["autoproxy"]["alter"] = None
-                await message.channel.send("Autoproxy set to front mode.")
+                if len(parts) >= 3:
+                    alter_name = " ".join(parts[2:])
+                    user_alters = global_profiles[user_id].get("alters", {})
+                    if alter_name in user_alters:
+                        global_profiles[user_id]["autoproxy"]["mode"] = "front"
+                        global_profiles[user_id]["autoproxy"]["alter"] = alter_name
+                        await message.channel.send(f"✅ Autoproxy now set to front mode for {alter_name}!")
+                    else:
+                        await message.channel.send(f"Alter '{alter_name}' not found.")
+                else:
+                    await message.channel.send("Usage: `!autoproxy front <alter_name>`")
                 
             elif command == "latch":
                 if len(parts) >= 3:
@@ -61,13 +63,13 @@ def setup_proxy_handler(bot):
                     if alter_name in user_alters:
                         global_profiles[user_id]["autoproxy"]["mode"] = "latch"
                         global_profiles[user_id]["autoproxy"]["alter"] = alter_name
-                        await message.channel.send(f"Autoproxy latched to {alter_name}.")
+                        await message.channel.send(f"✅ Autoproxy latched to {alter_name}.")
                     else:
                         await message.channel.send(f"Alter '{alter_name}' not found.")
                 else:
                     # New latch mode - use last proxied alter
                     global_profiles[user_id]["autoproxy"]["mode"] = "latch"
-                    await message.channel.send("Last proxied alter will be in latch mode.")
+                    await message.channel.send("✅ Last proxied alter will be in latch mode in this server!\n**Tip:** To turn off latch mode do `!autoproxy unlatch`, you can also switch to front mode with `!autoproxy front <name>` if you'd like!")
                     
             elif command == "unlatch":
                 global_profiles[user_id]["autoproxy"]["mode"] = "front"
@@ -84,7 +86,30 @@ def setup_proxy_handler(bot):
         # Check for autoproxy
         autoproxy_settings = global_profiles.get(user_id, {}).get("autoproxy", {"mode": "off", "alter": None, "last_proxied": None})
         
-        if autoproxy_settings["mode"] != "off" and not any(message.content.startswith(proxy) for proxy in [profile.get("proxy", "") for profile in user_profiles.values() if profile.get("proxy")]):
+        # Check if message matches any existing proxy format
+        message_matches_proxy = False
+        for profile in user_profiles.values():
+            proxy = profile.get("proxy", "")
+            if proxy and proxy != "No proxy set":
+                # Check {prefix}...{suffix} format
+                if "..." in proxy:
+                    parts = proxy.split("...")
+                    if len(parts) == 2:
+                        prefix, suffix = parts
+                        if message.content.startswith(prefix) and message.content.endswith(suffix):
+                            message_matches_proxy = True
+                            break
+                # Check suffix-only format
+                elif proxy.startswith(('-', '~', '/', '\\', '|', '+', '=', '*', '&', '%', '$', '#', '@', '!', '?', '<', '>', '^')):
+                    if message.content.endswith(proxy):
+                        message_matches_proxy = True
+                        break
+                # Check prefix format
+                elif message.content.startswith(proxy):
+                    message_matches_proxy = True
+                    break
+        
+        if autoproxy_settings["mode"] != "off" and not message_matches_proxy:
             target_alter = None
             
             if autoproxy_settings["mode"] == "latch":
@@ -107,7 +132,7 @@ def setup_proxy_handler(bot):
                 # Get system tag for display name
                 system_info = global_profiles.get(user_id, {}).get("system", {})
                 system_tag = system_info.get("tag", "")
-                webhook_name = f"{displayname} | {system_tag}" if system_tag else displayname
+                webhook_name = f"{displayname} {system_tag}" if system_tag else displayname
                 
                 # Update last proxied alter
                 global_profiles[user_id]["autoproxy"]["last_proxied"] = target_alter
@@ -115,26 +140,22 @@ def setup_proxy_handler(bot):
                 if message.guild:
                     webhook = await message.channel.create_webhook(name=webhook_name)
 
+                    # ALWAYS try to set proxy avatar - NO EXCEPTIONS
                     if proxy_avatar:
                         try:
                             async with aiohttp.ClientSession() as session:
                                 async with session.get(proxy_avatar) as response:
                                     if response.status == 200:
-                                        content_type = response.headers.get('content-type', '').lower()
-                                        if any(img_type in content_type for img_type in ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']):
-                                            avatar_bytes = await response.read()
-                                            await webhook.edit(avatar=avatar_bytes)
-                                        else:
-                                            print(f"Unsupported image type for {displayname}: {content_type}")
-                                            try:
-                                                avatar_bytes = await response.read()
-                                                await webhook.edit(avatar=avatar_bytes)
-                                            except:
-                                                pass
+                                        avatar_bytes = await response.read()
+                                        await webhook.edit(avatar=avatar_bytes)
+                                        print(f"✅ Successfully set autoproxy avatar for {displayname}")
                                     else:
-                                        print(f"Failed to fetch avatar for {displayname}: {response.status}")
+                                        print(f"⚠️ Failed to fetch autoproxy avatar for {displayname}: HTTP {response.status}")
                         except Exception as e:
-                            print(f"Error setting avatar for {displayname}: {e}")
+                            print(f"⚠️ Error setting autoproxy avatar for {displayname}: {e}")
+                            # Continue anyway - don't let avatar errors stop the proxy
+                    else:
+                        print(f"⚠️ No proxy avatar set for {displayname}")
 
                     await webhook.send(
                         content=message.content,
@@ -157,8 +178,37 @@ def setup_proxy_handler(bot):
 
             proxy_avatar = profile.get("proxy_avatar") or profile.get("proxyavatar") or profile.get("avatar")
 
-            if proxy and proxy != "No proxy set" and message.content.startswith(proxy):
-                clean_message = message.content[len(proxy):].strip()
+            if proxy and proxy != "No proxy set":
+                # Handle {prefix}...{suffix} format
+                if "..." in proxy:
+                    parts = proxy.split("...")
+                    if len(parts) == 2:
+                        prefix, suffix = parts
+                        if message.content.startswith(prefix) and message.content.endswith(suffix):
+                            # Remove prefix and suffix to get clean message
+                            clean_message = message.content[len(prefix):-len(suffix) if suffix else len(message.content)].strip()
+                            if not clean_message:  # Don't proxy empty messages
+                                continue
+                        else:
+                            continue
+                    else:
+                        continue
+                # Handle suffix-only format (like -aj, ~name, etc.)
+                elif proxy.startswith(('-', '~', '/', '\\', '|', '+', '=', '*', '&', '%', '$', '#', '@', '!', '?', '<', '>', '^')):
+                    if message.content.endswith(proxy):
+                        # Remove suffix to get clean message
+                        clean_message = message.content[:-len(proxy)].strip()
+                        if not clean_message:  # Don't proxy empty messages
+                            continue
+                    else:
+                        continue
+                # Handle simple prefix format - but require text after prefix
+                elif message.content.startswith(proxy):
+                    clean_message = message.content[len(proxy):].strip()
+                    if not clean_message:  # Don't proxy if no text after prefix
+                        continue
+                else:
+                    continue
 
                 # Update last proxied alter for latch mode
                 if user_id in global_profiles and "autoproxy" in global_profiles[user_id]:
@@ -167,31 +217,27 @@ def setup_proxy_handler(bot):
                 # Get system tag for display name
                 system_info = global_profiles.get(user_id, {}).get("system", {})
                 system_tag = system_info.get("tag", "")
-                webhook_name = f"{displayname} | {system_tag}" if system_tag else displayname
+                webhook_name = f"{displayname} {system_tag}" if system_tag else displayname
 
                 if message.guild:
                     webhook = await message.channel.create_webhook(name=webhook_name)
 
+                    # ALWAYS try to set proxy avatar - NO EXCEPTIONS
                     if proxy_avatar:
                         try:
                             async with aiohttp.ClientSession() as session:
                                 async with session.get(proxy_avatar) as response:
                                     if response.status == 200:
-                                        content_type = response.headers.get('content-type', '').lower()
-                                        if any(img_type in content_type for img_type in ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']):
-                                            avatar_bytes = await response.read()
-                                            await webhook.edit(avatar=avatar_bytes)
-                                        else:
-                                            print(f"Unsupported image type for {displayname}: {content_type}")
-                                            try:
-                                                avatar_bytes = await response.read()
-                                                await webhook.edit(avatar=avatar_bytes)
-                                            except:
-                                                pass
+                                        avatar_bytes = await response.read()
+                                        await webhook.edit(avatar=avatar_bytes)
+                                        print(f"✅ Successfully set autoproxy avatar for {displayname}")
                                     else:
-                                        print(f"Failed to fetch avatar for {displayname}: {response.status}")
+                                        print(f"⚠️ Failed to fetch autoproxy avatar for {displayname}: HTTP {response.status}")
                         except Exception as e:
-                            print(f"Error setting avatar for {displayname}: {e}")
+                            print(f"⚠️ Error setting autoproxy avatar for {displayname}: {e}")
+                            # Continue anyway - don't let avatar errors stop the proxy
+                    else:
+                        print(f"⚠️ No proxy avatar set for {displayname}")
 
                     await webhook.send(
                         content=clean_message,

@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from data_manager import global_profiles, save_profiles
@@ -252,3 +251,33 @@ def setup_folder_commands(bot):
             await ctx.send(f"🗑️ All alters have been removed from the folder **{folder_name}**.")
         else:
             await ctx.send(f"❌ Folder **{folder_name}** does not exist.")
+
+    @bot.command(name="list_folders")
+    async def list_folders(ctx):
+        user_id = str(ctx.author.id)
+        ensure_folders_exist(user_id)
+
+        folders = global_profiles[user_id]["folders"]
+        
+        if not folders:
+            await ctx.send("📁 You don't have any folders yet. Use `!create_folder` to create one!")
+            return
+
+        embed = discord.Embed(
+            title="📁 Your Folders",
+            color=0x8A2BE2,
+            description=f"You have **{len(folders)}** folder(s):"
+        )
+
+        for folder_name, folder_data in folders.items():
+            alter_count = len(folder_data.get("alters", []))
+            alter_text = f"{alter_count} alter(s)"
+            
+            embed.add_field(
+                name=f"📁 {folder_name}",
+                value=f"**Alters:** {alter_text}",
+                inline=True
+            )
+
+        embed.set_footer(text="Use !show_folder <name> to view a specific folder")
+        await ctx.send(embed=embed)

@@ -106,100 +106,166 @@ def setup_utility_commands(bot):
         except Exception as e:
             print(f"⚠️ Error sending DM to {ctx.author}: {e}")
 
-    @bot.command(name="pixelhelp")
+    @bot.command()
     async def pixelhelp(ctx):
+        """Paginated help command with navigation"""
+        
+        class HelpPaginator(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=300)
+                self.current_page = 0
+                self.pages = [
+                    # Page 0 - Guide/Index
+                    {
+                        "title": "📖 Pixel Command Guide",
+                        "description": "**Welcome to Pixel Bot!**\n\nUse the buttons below to navigate through different command categories:\n\n"
+                                     "📄 **Page 1** - System Management\n"
+                                     "👥 **Page 2** - Profile & Alter Management\n"
+                                     "📁 **Page 3** - Folder Management\n"
+                                     "🗣️ **Page 4** - Proxy & Autoproxy\n"
+                                     "📂 **Page 5** - Import & Export\n"
+                                     "🔧 **Page 6** - Admin Commands\n"
+                                     "🛠️ **Page 7** - Utility Commands\n\n"
+                                     "💡 **Tip:** Commands marked with `(admin only)` require administrator permissions.",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 1 - System Management
+                    {
+                        "title": "🗃️ System Management Commands",
+                        "description": "**System Setup & Configuration:**\n\n"
+                                     "`!create_system <name>` - Create a new system\n"
+                                     "`!edit_system` - Edit system details (name, avatar, banner, description, pronouns, color, tag)\n"
+                                     "`!set_system_tag <tag>` - Set or update your system tag\n"
+                                     "`!delete_system` - Delete the current system\n"
+                                     "`!system` - Show system info with avatars, banners, and colors\n\n"
+                                     "**System Tags:**\nSystem tags appear after alter names when proxying\n"
+                                     "Example: `Alter Name | [your tag]`",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 2 - Profile & Alter Management  
+                    {
+                        "title": "👥 Profile & Alter Management",
+                        "description": "**Creating & Managing Alters:**\n\n"
+                                     "`!create <name> <pronouns> <description>` - Create new alter with embed support\n"
+                                     "`!edit <name>` - Edit alter details (name, displayname, pronouns, description, avatar, banner, proxy, color, role, age, birthday, privacy)\n"
+                                     "`!show <name>` - Display alter profile with avatars, banners, and colors\n"
+                                     "`!list_profiles` - List all alters in current system\n"
+                                     "`!delete <name>` - Delete an alter\n\n"
+                                     "**Aliases:**\n"
+                                     "`!alias <name> <alias>` - Add alias to alter\n"
+                                     "`!remove_alias <name> <alias>` - Remove alias from alter",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 3 - Folder Management
+                    {
+                        "title": "📁 Folder Management",
+                        "description": "**Organize your alters into folders:**\n\n"
+                                     "`!create_folder` - Create a new folder with a name, color, banner, icon, and alters\n"
+                                     "`!edit_folder <folder name>` - Edit an existing folder\n"
+                                     "`!delete_folder <folder name>` - Delete a folder\n"
+                                     "`!list_folders` - List all folders in your system\n"
+                                     "`!wipe_folder_alters <folder name>` - Remove all alters from a folder\n"
+                                     "`!show_folder <folder name>` - Show the contents of a folder\n"
+                                     "`!add_alters <folder name> <alter1, alter2>` - Add one or more alters to a folder\n"
+                                     "`!remove_alters <folder name> <alter1, alter2>` - Remove one or more alters from a folder",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 4 - Proxy & Autoproxy
+                    {
+                        "title": "🗣️ Proxy & Autoproxy Commands",
+                        "description": "**Proxy Setup:**\n"
+                                     "`!set_proxy <name> <proxy>` - Set proxy for alter\n"
+                                     "• Simple format: `a:` (requires text after)\n"
+                                     "• Advanced format: `a:...;` (text between prefix/suffix)\n"
+                                     "`!proxyavatar <name>` - Set separate avatar for proxying\n"
+                                     "`!proxy <name> <message>` - Send proxied message manually\n\n"
+                                     "**Autoproxy:**\n"
+                                     "`!autoproxy latch` - Last proxied alter stays active\n"
+                                     "`!autoproxy latch <name>` - Set specific alter to latch\n"
+                                     "`!autoproxy front <name>` - Set alter as front\n"
+                                     "`!autoproxy unlatch` - Disable autoproxy completely\n"
+                                     "`!autoproxy off` - Turn off autoproxy",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 5 - Import & Export
+                    {
+                        "title": "📂 Import & Export Commands",
+                        "description": "**System Data Management:**\n\n"
+                                     "`!export_system` - Export entire system to JSON file (sent to DMs)\n"
+                                     "`!import_system` - Import previously exported system from JSON file\n\n"
+                                     "**PluralKit Integration:**\n"
+                                     "`!import_pluralkit` - Import PluralKit system data\n"
+                                     "• Imports profiles with proxy avatars and colors\n"
+                                     "• Converts groups to folders automatically\n"
+                                     "• Preserves system tags and member details\n\n"
+                                     "**Note:** Import commands will overwrite existing data. Export first as backup!",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 6 - Admin Commands
+                    {
+                        "title": "🔧 Admin Commands (Admin Only)",
+                        "description": "**Channel & Category Management:**\n\n"
+                                     "`!blacklist_channel <channel>` - Blacklist channel from proxy detection\n"
+                                     "`!blacklist_category <category>` - Blacklist entire category from proxy detection\n"
+                                     "`!list_blacklists` - List all blacklisted channels and categories\n"
+                                     "`!admin_commands` - Display all admin commands\n\n"
+                                     "**Note:** These commands require administrator permissions in the server.",
+                        "color": 0x8A2BE2
+                    },
+                    # Page 7 - Utility Commands
+                    {
+                        "title": "🛠️ Utility Commands",
+                        "description": "**Bot Information & Help:**\n\n"
+                                     "`!pixelhelp` - Show this command list\n"
+                                     "**Need help?** Join our support server!",
+                        "color": 0x8A2BE2
+                    }
+                ]
+
+            async def update_message(self, interaction):
+                page = self.pages[self.current_page]
+                embed = discord.Embed(
+                    title=page["title"],
+                    description=page["description"],
+                    color=page["color"]
+                )
+                embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.pages)} • Use buttons to navigate")
+                await interaction.response.edit_message(embed=embed, view=self)
+
+            @discord.ui.button(label="⬅️ Previous", style=discord.ButtonStyle.secondary)
+            async def previous_page(self, interaction, button):
+                if self.current_page > 0:
+                    self.current_page -= 1
+                else:
+                    self.current_page = len(self.pages) - 1
+                await self.update_message(interaction)
+
+            @discord.ui.button(label="Soon", style=discord.ButtonStyle.blurple, emoji="📖")
+            async def guide_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                self.current_page = 0
+                embed = discord.Embed(
+                    title=self.pages[self.current_page]["title"],
+                    description=self.pages[self.current_page]["description"],
+                    color=0x8A2BE2
+                )
+                embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.pages)}")
+                await interaction.response.edit_message(embed=embed, view=self)
+
+            @discord.ui.button(label="➡️ Next", style=discord.ButtonStyle.secondary)
+            async def next_page(self, interaction, button):
+                if self.current_page < len(self.pages) - 1:
+                    self.current_page += 1
+                else:
+                    self.current_page = 0
+                await self.update_message(interaction)
+
+        # Send initial page
+        paginator = HelpPaginator()
+        page = paginator.pages[0]
         embed = discord.Embed(
-            title="📂 PixelBot Command List",
-            description="Here are all the available commands for managing systems, alters, folders, and more:",
-            color=0x8A2BE2
+            title=page["title"],
+            description=page["description"],
+            color=page["color"]
         )
-
-        embed.add_field(
-            name="🗃️ **System Management**",
-            value=(
-                "`!create_system <name>` - Create a new system.\n"
-                "`!edit_system` - Edit the current system (name, avatar, banner, description, pronouns, color, tag).\n"
-                "`!set_system_tag <tag>` - Set or update your system tag.\n"
-                "`!delete_system` - Delete the current system.\n"
-                "`!system` - Show the current system's info, including avatars, banners, and colors.\n"
-                "`!export_system` - Export your entire system to a JSON file (sent to DMs).\n"
-                "`!import_system` - Import a previously exported system from a JSON file."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="👥 **Profile and Alter Management**",
-            value=(
-                "`!create <name> <pronouns> <description>` - Create a new profile with optional embed support.\n"
-                "`!edit <name>` - Edit an existing profile (name, displayname, pronouns, description, avatar, banner, proxy, color, proxy avatar).\n"
-                "`!show <name>` - Show a profile, including avatars, banners, and colors.\n"
-                "`!list_profiles` - List all profiles in the current system.\n"
-                "`!delete <name>` - Delete a profile.\n"
-                "`!alias <name> <alias>` - Add an alias to a profile.\n"
-                "`!remove_alias <name> <alias>` - Remove an alias from a profile."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="📁 **Folder Management**",
-            value=(
-                "`!create_folder` - Create a new folder with a name, color, banner, icon, and alters.\n"
-                "`!edit_folder <folder name>` - Edit an existing folder.\n"
-                "`!delete_folder <folder name>` - Delete a folder.\n"
-                "`!wipe_folder_alters <folder name>` - Remove all alters from a folder.\n"
-                "`!show_folder <folder name>` - Show the contents of a folder.\n"
-                "`!add_alters <folder name> <alter1, alter2>` - Add one or more alters to a folder.\n"
-                "`!remove_alters <folder name> <alter1, alter2>` - Remove one or more alters from a folder."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🗣️ **Proxy Management**",
-            value=(
-                "`!proxyavatar <name>` - Set a separate avatar for proxying.\n"
-                "`!proxy` - Send a proxied message.\n"
-                "`!set_proxy <name> <proxy>` - Set a proxy for an alter.\n"
-                "`!autoproxy latch [alter_name]` - Auto-proxy as specific alter or last proxied.\n"
-                "`!autoproxy unlatch` - Switch to front mode.\n"
-                "`!autoproxy front` - Auto-proxy as first alter.\n"
-                "`!autoproxy off` - Disable autoproxy."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="📂 **Import and Export**",
-            value=(
-                "`!export_system` - Export your entire system to a JSON file (sent to DMs).\n"
-                "`!import_system` - Import a previously exported system from a JSON file.\n"
-                "`!import_pluralkit` - Import your PluralKit profiles, including proxy avatars and colors."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🔧 **Admin Commands**",
-            value=(
-                "`!blacklist_channel <channel>` - Blacklist a channel from proxy detection (admin only).\n"
-                "`!blacklist_category <category>` - Blacklist an entire category from proxy detection (admin only).\n"
-                "`!list_blacklists` - List all blacklisted channels and categories (admin only).\n"
-                "`!admin_commands` - Display all admin commands (admin only)."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🛠️ **Utility Commands**",
-            value=(
-                "`!pixel` - Check the bot's current speed and latency (admin only).\n"
-                "`!pixelhelp` - Show the full command list."
-            ),
-            inline=False
-        )
-
-        embed.set_footer(text="PixelBot - The Ultimate Proxy and System Management Bot")
-
-        await ctx.send(embed=embed)
+        embed.set_footer(text=f"Page 1/{len(paginator.pages)} • Use buttons to navigate")
+        await ctx.send(embed=embed, view=paginator)

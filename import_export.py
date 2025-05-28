@@ -93,35 +93,33 @@ def setup_import_export(bot):
                             if user_id not in global_profiles:
                                 global_profiles[user_id] = {"system": {}, "alters": {}, "folders": {}}
 
-                            # Import system data with all fields including tag - match PixelBot structure exactly
-                            system_data = data.get("system", {})
-                            if system_data:
-                                system_name = system_data.get("name", "Imported System")
-                                system_description = system_data.get("description", "Imported from PluralKit")
-                                system_pronouns = system_data.get("pronouns", "Not set")
-                                system_avatar = system_data.get("avatar_url", None)
-                                system_banner = system_data.get("banner", None)
-                                system_color = system_data.get("color", "#8A2BE2")
-                                system_tag = system_data.get("tag", None)  # Import system tag
-                                
-                                try:
-                                    if not system_color or system_color.strip() == "":
-                                        color_int = 0x8A2BE2
-                                    else:
-                                        color_int = int(system_color.lstrip("#"), 16)
-                                except (ValueError, AttributeError):
+                            # Import system data - PluralKit has system data at root level
+                            system_name = data.get("name", "Imported System")
+                            system_description = data.get("description", "Imported from PluralKit")
+                            system_pronouns = data.get("pronouns", "Not set")
+                            system_avatar = data.get("avatar_url", None)
+                            system_banner = data.get("banner", None)
+                            system_color = data.get("color", "#8A2BE2")
+                            system_tag = data.get("tag", None)  # Import system tag
+                            
+                            try:
+                                if not system_color or system_color.strip() == "":
                                     color_int = 0x8A2BE2
+                                else:
+                                    color_int = int(system_color.lstrip("#"), 16)
+                            except (ValueError, AttributeError):
+                                color_int = 0x8A2BE2
 
-                                # Match PixelBot's exact system structure
-                                global_profiles[user_id]["system"] = {
-                                    "name": system_name,
-                                    "description": system_description,
-                                    "avatar": system_avatar,
-                                    "banner": system_banner,
-                                    "pronouns": system_pronouns,
-                                    "color": color_int,
-                                    "tag": system_tag
-                                }
+                            # Match PixelBot's exact system structure
+                            global_profiles[user_id]["system"] = {
+                                "name": system_name,
+                                "description": system_description,
+                                "avatar": system_avatar,
+                                "banner": system_banner,
+                                "pronouns": system_pronouns,
+                                "color": color_int,
+                                "tag": system_tag
+                            }
 
                             # Ensure proper structure exists
                             if "alters" not in global_profiles[user_id]:
@@ -236,7 +234,7 @@ def setup_import_export(bot):
                             
                             # Create comprehensive success message
                             success_parts = []
-                            if system_data:
+                            if system_name:
                                 success_parts.append("system")
                             if members_imported > 0:
                                 success_parts.append(f"{members_imported} members")
@@ -251,7 +249,8 @@ def setup_import_export(bot):
                             await ctx.send("❌ Failed to download the file. Please try again.")
 
         except TimeoutError:
-            await ctx.send("❌ You took too long to upload the file. Please try again.")
+            await ctx.send("❌ Import canceled.")
+            return
 
         except Exception as e:
             print(f"⚠️ Error importing PluralKit system for {ctx.author}: {e}")
