@@ -127,13 +127,23 @@ async def process_proxy_message(message):
                 prefix, suffix = parts
                 if message.content.startswith(prefix) and message.content.endswith(suffix):
                     content = message.content[len(prefix):-len(suffix)] if suffix else message.content[len(prefix):]
-                    if content.strip():
+                    # Allow proxy even if content is empty but there are attachments
+                    if content.strip() or message.attachments:
                         return await send_proxy_message(message, name, content.strip(), alter_data)
+        elif ' text' in proxy_pattern:
+            # PluralKit-style format: "prefix text" where text is a placeholder
+            prefix = proxy_pattern.replace(' text', '')
+            if message.content.startswith(prefix):
+                content = message.content[len(prefix):].strip()
+                # Allow proxy even if content is empty but there are attachments
+                if content or message.attachments:
+                    return await send_proxy_message(message, name, content, alter_data)
         else:
             # Simple prefix format
             if message.content.startswith(proxy_pattern):
                 content = message.content[len(proxy_pattern):].strip()
-                if content:
+                # Allow proxy even if content is empty but there are attachments
+                if content or message.attachments:
                     return await send_proxy_message(message, name, content, alter_data)
     
     # Handle autoproxy if no explicit proxy found
@@ -150,6 +160,7 @@ async def process_proxy_message(message):
             # Update last proxied for latch mode
             profile["autoproxy"]["last_proxied"] = target_alter
             await data_manager.save_user_profile(user_id, profile)
+            # Pass the full message content and attachments for autoproxy
             return await send_proxy_message(message, target_alter, message.content, alter_data)
     
     return False
@@ -207,13 +218,17 @@ async def send_proxy_message(message, alter_name, content, alter_data):
             if message.attachments:
                 for attachment in message.attachments:
                     try:
+                        # Download the attachment data
                         file_data = await attachment.read()
+                        # Create a Discord file object
                         files.append(discord.File(io.BytesIO(file_data), filename=attachment.filename))
-                    except:
+                    except Exception as e:
+                        print(f"Error downloading attachment {attachment.filename}: {e}")
+                        # If we can't download the file, add a link to the content
                         final_content += f"\n[Attachment: {attachment.filename}]({attachment.url})"
             
             await webhook.send(
-                content=final_content,
+                content=final_content if final_content.strip() else None,
                 username=display_name,
                 avatar_url=avatar_url,
                 files=files

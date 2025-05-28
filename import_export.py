@@ -58,7 +58,7 @@ def setup_import_export(bot):
                             # Ensure the data has the correct structure
                             data["user_id"] = user_id
                             success = await data_manager.save_user_profile(user_id, data)
-                            
+
                             if success:
                                 await ctx.send("✅ Your system has been successfully imported.")
                             else:
@@ -67,7 +67,7 @@ def setup_import_export(bot):
                             await ctx.send("❌ Failed to download the file. Please try again.")
 
         except TimeoutError:
-            await ctx.send("❌ You took too long to upload the file. Please try again.")
+            return  # Silent timeout - no message
 
         except Exception as e:
             print(f"⚠️ Error importing system for {ctx.author}: {e}")
@@ -92,20 +92,39 @@ def setup_import_export(bot):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(file_url) as response:
                         if response.status == 200:
+                            await ctx.send("📂 I've detected you've sent a JSON file. If I don't respond with import completed please resend the command!")
+                            
                             pk_data = await response.json()
 
                             # Get existing profile or create new one
                             profile = await data_manager.get_user_profile(user_id)
+                            
+                            # Initialize required dictionaries if they don't exist
+                            if "alters" not in profile:
+                                profile["alters"] = {}
+                            if "folders" not in profile:
+                                profile["folders"] = {}
+                            if "system" not in profile:
+                                profile["system"] = {}
 
                             # Import system info
                             if "name" in pk_data:
+                                # Handle color conversion
+                                system_color = pk_data.get("color", 0x8A2BE2)
+                                if isinstance(system_color, str):
+                                    try:
+                                        system_color = int(system_color.replace("#", ""), 16)
+                                    except (ValueError, AttributeError):
+                                        system_color = 0x8A2BE2
+
                                 profile["system"] = {
                                     "name": pk_data.get("name", "Imported System"),
                                     "description": pk_data.get("description", "Imported from PluralKit"),
                                     "pronouns": pk_data.get("pronouns", "Not set"),
                                     "avatar": pk_data.get("avatar_url"),
                                     "banner": pk_data.get("banner"),
-                                    "color": pk_data.get("color", 0x8A2BE2),
+                                    "color": system_color,
+                                    "tag": pk_data.get("tag"),
                                     "created_at": pk_data.get("created"),
                                     "front_history": [],
                                     "system_avatar": pk_data.get("avatar_url"),
@@ -126,13 +145,33 @@ def setup_import_export(bot):
                                     if name in profile.get("alters", {}):
                                         continue
 
-                                    # Convert PluralKit proxy tags to simple format
+                                    # Convert PluralKit proxy tags to Pixel format
                                     proxy_tags = member.get("proxy_tags", [])
-                                    proxy = None
+                                    proxy = "No proxy set"
                                     if proxy_tags:
                                         prefix = proxy_tags[0].get("prefix", "")
                                         suffix = proxy_tags[0].get("suffix", "")
-                                        proxy = f"{prefix}text{suffix}"
+                                
+                                        # Handle different PluralKit proxy formats
+                                        if prefix and suffix:
+                                            # Format: prefix...suffix
+                                            proxy = f"{prefix}...{suffix}"
+                                        elif prefix and not suffix:
+                                            # Format: prefix text (PluralKit style)
+                                            proxy = f"{prefix} text"
+                                        elif suffix and not prefix:
+                                            # Format: text suffix
+                                            proxy = f"text {suffix}"
+                                        else:
+                                            proxy = "No proxy set"
+
+                                    # Handle color conversion for alter
+                                    alter_color = member.get("color", 0x8A2BE2)
+                                    if isinstance(alter_color, str):
+                                        try:
+                                            alter_color = int(alter_color.replace("#", ""), 16)
+                                        except (ValueError, AttributeError):
+                                            alter_color = 0x8A2BE2
 
                                     alter_data = {
                                         "displayname": member.get("display_name") or name,
@@ -143,7 +182,7 @@ def setup_import_export(bot):
                                         "banner": member.get("banner"),
                                         "proxy": proxy,
                                         "aliases": [],
-                                        "color": member.get("color", 0x8A2BE2),
+                                        "color": alter_color,
                                         "use_embed": True,
                                         "created_at": member.get("created"),
                                         "role": None,
@@ -199,7 +238,7 @@ def setup_import_export(bot):
                             await ctx.send("❌ Failed to download the file. Please try again.")
 
         except TimeoutError:
-            await ctx.send("❌ You took too long to upload the file. Please try again.")
+            return  # Silent timeout - no message
 
         except Exception as e:
             print(f"⚠️ Error importing PluralKit data for {ctx.author}: {e}")

@@ -198,6 +198,15 @@ def setup_alter_commands(bot):
         proxy_avatar_url = alter.get("proxy_avatar") or alter.get("proxyavatar", None)
         banner_url = alter.get("banner", None)
         embed_color = alter.get("color", 0x8A2BE2)
+        
+        # Handle color format conversion (PluralKit imports may have string colors)
+        if isinstance(embed_color, str):
+            try:
+                # Remove # if present and convert hex string to int
+                embed_color = int(embed_color.replace("#", ""), 16)
+            except (ValueError, AttributeError):
+                embed_color = 0x8A2BE2  # Default color if conversion fails
+
         use_embed = alter.get("use_embed", True)
 
         description = alter.get("description", "No description provided") or "No description provided"

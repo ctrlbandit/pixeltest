@@ -227,16 +227,15 @@ def setup_system_commands(bot):
 
         # Build description with system tag if it exists
         description_parts = [
-            f"**System Name**\n{system_name}\n",
-            f"**Pronouns**\n{system_pronouns}\n"
+            f"Pronouns: {system_pronouns}\n"
         ]
         
         if system_tag:
-            description_parts.append(f"**System Tag**\n{system_tag}\n")
+            description_parts.append(f"System Tag: {system_tag}\n")
             
         description_parts.extend([
-            f"**Description**\n{system_description}\n",
-            f"||Linked Discord Account: {ctx.author.mention}||"
+            f"Description: {system_description}\n",
+            f"Linked Discord Account: {ctx.author.mention}"
         ])
 
         embed = discord.Embed(
