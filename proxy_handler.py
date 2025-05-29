@@ -1,264 +1,312 @@
-import discord
-import aiohttp
-from data_manager import data_manager
-import re
-import asyncio
-import io
+from __future__ import annotations
 
-def setup_proxy_handler(bot):
+import io
+from typing import Any
+
+import discord
+from data_manager import data_manager
+
+# ───────────────────────── debug helper ────────────────────────── #
+
+def _d(tag: str, *vals: Any) -> None:  
+    """Print labelled debug output."""
+    print(f"[DEBUG] {tag}:", *vals)
+
+
+# ───────────────────────── setup function ──────────────────────── #
+
+def setup_proxy_handler(bot: discord.Bot) -> None:
+    """Register on_message listener for proxying and autoproxy commands."""
+
+    # ============================================================
+    # on_message entrypoint
+    # ============================================================
     @bot.event
-    async def on_message(message):
+    async def on_message(message: discord.Message):  # noqa: D401
         if message.author.bot:
             return
 
-        user_id = str(message.author.id)
-        
-        # Handle autoproxy commands
-        if message.content.startswith("!autoproxy"):
-            parts = message.content.split()
-            if len(parts) >= 2:
-                command = parts[1].lower()
-                
-                if command == "off":
-                    await handle_autoproxy_command(message, "off")
-                    
-                elif command == "front":
-                    if len(parts) >= 3:
-                        alter_name = " ".join(parts[2:])
-                        await handle_autoproxy_command(message, "front", alter_name)
-                    else:
-                        await message.channel.send("Usage: `!autoproxy front <alter_name>`")
-                        
-                elif command == "latch":
-                    if len(parts) >= 3:
-                        # Traditional latch with specific alter name
-                        alter_name = " ".join(parts[2:])
-                        await handle_autoproxy_command(message, "latch", alter_name)
-                    else:
-                        # New latch mode - use last proxied alter
-                        await handle_autoproxy_command(message, "latch")
-                        
-                elif command == "unlatch":
-                    await handle_autoproxy_command(message, "off")
-                    
-                else:
-                    await message.channel.send("Invalid autoproxy command. Use: `off`, `front <alter>`, `latch [alter]`, or `unlatch`")
-            
-            return  # Don't process other commands for autoproxy
+        _d("MSG", {
+            "guild": message.guild.id if message.guild else "DM",
+            "author": message.author.id,
+            "content": message.content[:80]
+        })
 
-        # Process proxy messages
-        proxied = await process_proxy_message(message)
-        
-        # Only process commands if no proxy was triggered
+        # 1) autoproxy command handling ------------------------------------
+        if message.content.startswith("!autoproxy"):
+            await _handle_autoproxy_command(message)
+            return
+
+        # 2) proxy processing ---------------------------------------------
+        proxied = await _process_proxy(message)
         if not proxied:
             await bot.process_commands(message)
 
-async def handle_autoproxy_command(message, mode, alter_name=None):
-    """Handle autoproxy mode changes"""
-    user_id = str(message.author.id)
-    profile = await data_manager.get_user_profile(user_id)
-    
-    # Ensure autoproxy settings exist
-    if "autoproxy" not in profile:
-        profile["autoproxy"] = {"mode": "off", "alter": None, "last_proxied": None}
+    # ============================================================
+    # Command: !autoproxy
+    # ============================================================
+    async def _handle_autoproxy_command(msg: discord.Message) -> None:
+        parts = msg.content.split()
+        if len(parts) < 2:
+            return
 
-    if mode == "off":
-        profile["autoproxy"]["mode"] = "off"
-        profile["autoproxy"]["alter"] = None
-        await data_manager.save_user_profile(user_id, profile)
-        await message.channel.send("🔴 **Autoproxy disabled.**")
-        return
+        sub = parts[1].lower()
+        global_flag = len(parts) >= 3 and parts[-1].lower() == "global"
+        scope = "global" if global_flag else "server"
+        alter_arg: str | None = None
+        if sub == "front" and len(parts) >= 3:
+            alter_arg = " ".join(parts[2:-1] if global_flag else parts[2:])
 
-    elif mode == "front":
-        user_alters = profile.get("alters", {})
-        if alter_name and alter_name in user_alters:
-            profile["autoproxy"]["mode"] = "front"
-            profile["autoproxy"]["alter"] = alter_name
-            await data_manager.save_user_profile(user_id, profile)
-            await message.channel.send(f"🟢 **Autoproxy set to FRONT mode** for **{alter_name}**.")
-        else:
-            await message.channel.send("❌ **Invalid alter name.** Please specify a valid alter for front mode.")
+        uid = str(msg.author.id)
+        gid = str(msg.guild.id) if msg.guild else None
+        if scope == "server" and gid is None:
+            await msg.channel.send("⚠️ This command must be used in a server or add `global`.")
+            return
 
-    elif mode == "latch":
-        user_alters = profile.get("alters", {})
-        if alter_name and alter_name in user_alters:
-            profile["autoproxy"]["mode"] = "latch"
-            profile["autoproxy"]["alter"] = alter_name
-            await data_manager.save_user_profile(user_id, profile)
-            await message.channel.send(f"🟡 **Autoproxy set to LATCH mode** for **{alter_name}**.")
-        else:
-            # Enable latch mode with last proxied alter
-            profile["autoproxy"]["mode"] = "latch"
-            await data_manager.save_user_profile(user_id, profile)
-            if profile["autoproxy"].get("last_proxied"):
-                await message.channel.send("🟡 **Autoproxy set to LATCH mode.** Will use the last proxied alter.")
+        profile = await data_manager.get_user_profile(uid) or {}
+        store: dict[str, Any] = profile.get("autoproxy", {})
+        key = "global" if scope == "global" else gid
+        conf = store.get(key, {"mode": "off", "alter": None, "last_proxied": None})
+        alters = profile.get("alters", {})
+
+        if sub in {"off", "unlatch"}:
+            if sub == "unlatch" and not global_flag:
+                # !autoproxy unlatch (without global) - disable BOTH server and global
+                conf.update({"mode": "off", "alter": None})
+                store[key] = conf
+                
+                # Also disable global if it exists
+                if "global" in store:
+                    global_conf = store["global"]
+                    global_conf.update({"mode": "off", "alter": None})
+                    store["global"] = global_conf
+                    _d("UNLATCH_BOTH", "Disabled both server and global autoproxy")
+                else:
+                    _d("UNLATCH_SERVER_ONLY", "Disabled server autoproxy (no global config found)")
+                
+                reply = "🔴 **Autoproxy disabled** (both server and global)."
             else:
-                await message.channel.send("🟡 **Autoproxy set to LATCH mode.** Send a message with any alter to start latching.")
-
-async def process_proxy_message(message):
-    """Process a message for proxy detection and handling"""
-    # Check if channel is blacklisted first
-    if message.guild:
-        guild_id = str(message.guild.id)
-        channel_id = str(message.channel.id)
-        category_id = str(message.channel.category.id) if message.channel.category else None
-        
-        if await is_blacklisted(guild_id, channel_id, category_id):
-            return False  # Don't proxy in blacklisted channels
-    
-    user_id = str(message.author.id)
-    profile = await data_manager.get_user_profile(user_id)
-    user_profiles = profile.get("alters", {})
-    
-    # Get autoproxy settings
-    autoproxy_settings = profile.get("autoproxy", {"mode": "off", "alter": None, "last_proxied": None})
-    
-    # Check for explicit proxy patterns first
-    for name, alter_data in user_profiles.items():
-        proxy_pattern = alter_data.get('proxy')
-        if not proxy_pattern or proxy_pattern == "No proxy set":
-            continue
-            
-        # Handle different proxy formats
-        if '...' in proxy_pattern:
-            # Format: prefix...suffix
-            parts = proxy_pattern.split('...', 1)
-            if len(parts) == 2:
-                prefix, suffix = parts
-                if message.content.startswith(prefix) and message.content.endswith(suffix):
-                    content = message.content[len(prefix):-len(suffix)] if suffix else message.content[len(prefix):]
-                    # Allow proxy even if content is empty but there are attachments
-                    if content.strip() or message.attachments:
-                        return await send_proxy_message(message, name, content.strip(), alter_data)
-        elif ' text' in proxy_pattern:
-            # PluralKit-style format: "prefix text" where text is a placeholder
-            prefix = proxy_pattern.replace(' text', '')
-            if message.content.startswith(prefix):
-                content = message.content[len(prefix):].strip()
-                # Allow proxy even if content is empty but there are attachments
-                if content or message.attachments:
-                    return await send_proxy_message(message, name, content, alter_data)
+                # !autoproxy off or !autoproxy unlatch global - disable only the specified scope
+                conf.update({"mode": "off", "alter": None})
+                reply = f"🔴 **Autoproxy disabled** ({scope})."
+                _d("UNLATCH_SPECIFIC", f"Disabled {scope} autoproxy only")
+        elif sub == "front":
+            if alter_arg and alter_arg in alters:
+                conf.update({"mode": "front", "alter": alter_arg})
+                reply = f"🟢 **Autoproxy set to FRONT mode** for **{alter_arg}** ({scope})."
+            else:
+                await msg.channel.send("❌ **Invalid alter name.**")
+                return
+        elif sub == "latch":
+            conf.update({"mode": "latch", "alter": None})
+            reply = f"🟡 **Autoproxy set to LATCH mode** ({scope})."
         else:
-            # Simple prefix format
-            if message.content.startswith(proxy_pattern):
-                content = message.content[len(proxy_pattern):].strip()
-                # Allow proxy even if content is empty but there are attachments
-                if content or message.attachments:
-                    return await send_proxy_message(message, name, content, alter_data)
-    
-    # Handle autoproxy if no explicit proxy found
-    if autoproxy_settings["mode"] != "off":
-        target_alter = None
-        
-        if autoproxy_settings["mode"] == "front" and autoproxy_settings.get("alter"):
-            target_alter = autoproxy_settings["alter"]
-        elif autoproxy_settings["mode"] == "latch" and autoproxy_settings.get("last_proxied"):
-            target_alter = autoproxy_settings["last_proxied"]
-        
-        if target_alter and target_alter in user_profiles:
-            alter_data = user_profiles[target_alter]
-            # Update last proxied for latch mode
-            profile["autoproxy"]["last_proxied"] = target_alter
-            await data_manager.save_user_profile(user_id, profile)
-            # Pass the full message content and attachments for autoproxy
-            return await send_proxy_message(message, target_alter, message.content, alter_data)
-    
-    return False
+            await msg.channel.send("Invalid autoproxy command. Use: `off`, `front <alter>`, `latch`, or `unlatch`.")
+            return
 
-async def send_proxy_message(message, alter_name, content, alter_data):
-    """Send a proxied message"""
-    try:
-        # Get system info for system tag
-        user_id = str(message.author.id)
-        profile = await data_manager.get_user_profile(user_id)
-        system_info = profile.get("system", {})
+        store[key] = conf
+        profile["autoproxy"] = store
+        await data_manager.save_user_profile(uid, profile)
+        await msg.channel.send(reply)
+        _d("AUTOPROXY", {key: conf})
+
+    # ============================================================
+    # Proxy processing (patterns + autoproxy)
+    # ============================================================
+    async def _process_proxy(msg: discord.Message) -> bool:
+        uid = str(msg.author.id)
+        gid = str(msg.guild.id) if msg.guild else None
+        is_dm = msg.guild is None
+
+        # ---- blacklist checking --------------------------------------
+        if not is_dm and gid:
+            # Check if the current channel is blacklisted
+            channel_blacklist = await data_manager.get_blacklist("channel", gid)
+            if isinstance(channel_blacklist, dict) and str(msg.channel.id) in channel_blacklist:
+                _d("BLACKLIST", "Channel blacklisted, skipping proxy")
+                return False
+            
+            # Check if the channel's category is blacklisted
+            if hasattr(msg.channel, 'category') and msg.channel.category:
+                category_blacklist = await data_manager.get_blacklist("category", gid)
+                if isinstance(category_blacklist, dict) and str(msg.channel.category.id) in category_blacklist:
+                    _d("BLACKLIST", "Category blacklisted, skipping proxy")
+                    return False
+
+        profile = await data_manager.get_user_profile(uid) or {}
+        alters = profile.get("alters", {})
+
+        # ---- explicit proxy patterns ------------------------------
+        for name, alter_data in alters.items():
+            proxy_pattern = alter_data.get("proxy")
+            if not proxy_pattern or proxy_pattern == "No proxy set":
+                continue
+
+            content_hit: str | None = None
+            
+            # 1) prefix...suffix style
+            if "..." in proxy_pattern:
+                pre, suf = proxy_pattern.split("...", 1)
+                if msg.content.startswith(pre) and msg.content.endswith(suf):
+                    content_hit = msg.content[len(pre):-len(suf)] if suf else msg.content[len(pre):]
+
+            # 2) prefix text style
+            elif proxy_pattern.endswith(" text"):
+                prefix = proxy_pattern[:-5]
+                if msg.content.startswith(prefix):
+                    content_hit = msg.content[len(prefix):]
+
+            # 3) prefix style
+            else:
+                if msg.content.startswith(proxy_pattern):
+                    content_hit = msg.content[len(proxy_pattern):]
+
+            # Check if have a pattern match
+            if content_hit is not None:
+                content_hit = content_hit.strip()
+                _d("PROXY_MATCH", {
+                    "pattern": proxy_pattern,
+                    "alter": name,
+                    "content": content_hit,
+                    "attachments": len(msg.attachments)
+                })
+                
+                # Process if have content OR attachments
+                if content_hit or msg.attachments:
+                    if is_dm:
+                        await msg.channel.send("I cannot proxy in DMs. Please head to a server.")
+                        return True
+                    
+                    # Update global latch if active
+                    autoproxy_store = profile.get("autoproxy", {})
+                    if "global" in autoproxy_store and autoproxy_store["global"].get("mode") == "latch":
+                        autoproxy_store["global"]["last_proxied"] = name
+                        profile["autoproxy"] = autoproxy_store
+                        await data_manager.save_user_profile(uid, profile)
+                        _d("GLOBAL_LATCH_UPDATE", f"Updated global latch to {name}")
+                    
+                    return await _proxy_send(msg, name, content_hit, alter_data)
+
+        # ---- autoproxy front / latch ------------------------------
+        store: dict[str, Any] = profile.get("autoproxy", {})
+        auto: dict[str, Any] | None = None
+        key: str | None = None
         
-        # Delete original message
-        try:
-            await message.delete()
-        except discord.NotFound:
-            pass
-        except discord.Forbidden:
-            await message.channel.send("⚠️ I don't have permission to delete messages. Please give me the 'Manage Messages' permission for proxying to work properly.")
+        # 1. Check server config first if it exists and is active
+        if gid and gid in store and store[gid].get("mode") != "off":
+            auto = store[gid]
+            key = gid
+        # 2. Check global config if server config doesn't exist or is inactive
+        elif "global" in store and store["global"].get("mode") != "off":
+            auto = store["global"]
+            key = "global"
+        # 3. Fall back to inactive server config if it exists
+        elif gid and gid in store:
+            auto = store[gid]
+            key = gid
+
+        _d("AUTOPROXY_CHECK", {
+            "gid": gid,
+            "has_server_config": gid in store if gid else False,
+            "has_global_config": "global" in store,
+            "selected_key": key,
+            "auto_config": auto,
+            "store_keys": list(store.keys())
+        })
+
+        if not auto or auto["mode"] == "off":
+            _d("AUTOPROXY_SKIP", "No autoproxy config or mode is off")
             return False
-        
-        # Prepare message content with system tag if it exists
-        final_content = content
-        
-        # Get alter details
-        display_name = alter_data.get('displayname', alter_name)
-        avatar_url = alter_data.get('proxy_avatar') or alter_data.get('avatar')
-        
-        # Add system tag to display name if it exists
-        system_tag = system_info.get("tag")
-        if system_tag:
-            display_name = f"{display_name} {system_tag}"
-        
-        # Update last proxied for latch mode (only if autoproxy exists)
-        if "autoproxy" in profile:
-            profile["autoproxy"]["last_proxied"] = alter_name
-            await data_manager.save_user_profile(user_id, profile)
-        
-        # Send as webhook message (the proper way for DID/OSDD systems)
-        webhook = None
-        try:
-            # Try to find existing webhook
-            webhooks = await message.channel.webhooks()
-            for wh in webhooks:
-                if wh.name == "Pixel Proxy":
-                    webhook = wh
-                    break
+
+        target: str | None = None
+        if auto["mode"] == "front" and auto.get("alter"):
+            target = auto["alter"]
+        elif auto["mode"] == "latch" and auto.get("last_proxied"):
+            target = auto["last_proxied"]
+
+        _d("AUTOPROXY_TARGET", {
+            "mode": auto["mode"],
+            "target": target,
+            "last_proxied": auto.get("last_proxied"),
+            "available_alters": list(alters.keys())
+        })
+
+        if target and target in alters:
+            if is_dm:
+                await msg.channel.send("I cannot proxy in DMs. Please head to a server.")
+                return True
             
-            # Create webhook if none exists
-            if not webhook:
-                webhook = await message.channel.create_webhook(name="Pixel Proxy")
+            # Update last_proxied for latch mode
+            if auto["mode"] == "latch":
+                auto["last_proxied"] = target
+                store[key] = auto
+                profile["autoproxy"] = store
+                await data_manager.save_user_profile(uid, profile)
             
-            # Handle attachments
-            files = []
-            if message.attachments:
-                for attachment in message.attachments:
-                    try:
-                        # Download the attachment data
-                        file_data = await attachment.read()
-                        # Create a Discord file object
-                        files.append(discord.File(io.BytesIO(file_data), filename=attachment.filename))
-                    except Exception as e:
-                        print(f"Error downloading attachment {attachment.filename}: {e}")
-                        # If we can't download the file, add a link to the content
-                        final_content += f"\n[Attachment: {attachment.filename}]({attachment.url})"
-            
-            await webhook.send(
-                content=final_content if final_content.strip() else None,
-                username=display_name,
-                avatar_url=avatar_url,
-                files=files
-            )
-            
-        except discord.Forbidden:
-            # Fallback message if webhook fails
-            await message.channel.send(f"⚠️ I don't have permission to create webhooks. Proxy message from {display_name}: {final_content}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error sending proxy message: {e}")
+            return await _proxy_send(msg, target, msg.content, alters[target])
+
+        _d("AUTOPROXY_NO_TARGET", "No valid target found")
         return False
 
-async def is_blacklisted(guild_id, channel_id, category_id):
-    """Check if channel or category is blacklisted"""
-    guild_id = str(guild_id)
-    channel_id = str(channel_id)
-    category_id = str(category_id) if category_id else None
-    
-    # Check channel blacklist
-    channel_blacklist = await data_manager.get_blacklist("channel", guild_id)
-    if isinstance(channel_blacklist, dict) and channel_id in channel_blacklist:
-        return True
-    
-    # Check category blacklist
-    if category_id:
-        category_blacklist = await data_manager.get_blacklist("category", guild_id)
-        if isinstance(category_blacklist, dict) and category_id in category_blacklist:
+    # ============================================================
+    # Low‑level send via webhook
+    # ============================================================
+    async def _proxy_send(msg: discord.Message, alter: str, content: str, data: dict[str, Any]) -> bool:
+        uid = str(msg.author.id)
+
+        _d("PROXY_SEND", {
+            "alter": alter,
+            "content": content,
+            "attachments": len(msg.attachments),
+            "attachment_names": [att.filename for att in msg.attachments]
+        })
+
+        # 1) Download attachments before deleting
+        files: list[discord.File] = []
+        for att in msg.attachments:
+            try:
+                buf = await att.read()
+                files.append(discord.File(io.BytesIO(buf), filename=att.filename))
+                _d("ATTACH_DOWNLOAD", f"Successfully downloaded {att.filename}")
+            except Exception as e:
+                _d("ATTACH_ERR", e)
+                content += f"\n[Attachment: {att.filename}]({att.url})"
+
+        # 2) Delete original message
+        try:
+            await msg.delete()
+        except discord.Forbidden:
+            await msg.channel.send("⚠️ Need 'Manage Messages' permission to proxy.")
+            return False
+        except discord.NotFound:
+            pass
+
+        # 3) Compose display / avatar
+        profile = await data_manager.get_user_profile(uid) or {}
+        tag = profile.get("system", {}).get("tag")
+        display = data.get("displayname", alter) + (f" {tag}" if tag else "")
+        avatar = data.get("proxy_avatar") or data.get("avatar")
+
+        # 4) Send via webhook
+        try:
+            wh = next((w for w in await msg.channel.webhooks() if w.name == "Pixel Proxy"), None)
+            if not wh:
+                wh = await msg.channel.create_webhook(name="Pixel Proxy")
+            await wh.send(content=content if content.strip() else None, username=display, avatar_url=avatar, files=files)
+            _d("PROXY", display, "→", content[:60])
+        except discord.Forbidden:
+            await msg.channel.send(f"⚠️ Can't create webhooks. Proxy message from {display}: {content}")
             return True
-    
-    return False
+        except Exception as e:
+            _d("WEBHOOK_ERR", e)
+            return False
+
+        # 5) Update last_proxied if latch is active
+        ap = profile.get("autoproxy", {})
+        gid = str(msg.guild.id) if msg.guild else None
+        key = gid if gid and gid in ap else "global"
+        if key in ap and ap[key]["mode"] == "latch":
+            ap[key]["last_proxied"] = alter
+            profile["autoproxy"] = ap
+            await data_manager.save_user_profile(uid, profile)
+        return True

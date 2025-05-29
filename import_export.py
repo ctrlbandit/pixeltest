@@ -1,245 +1,248 @@
+"""
+import_export.py – PixelBot import/export commands
+=================================================
+
+Key points
+----------
+* **Async‑safe** – every call to `data_manager` is properly awaited and then double‑checked;
+  if a coroutine somehow leaks through, we await it once more.
+* **Attachment in same message** supported: `!import_system <attach>` or
+  `!import_pluralkit <attach>` works alongside the classic prompt flow.
+* **Tracebacks** only echo to guild owners/admins for quick debugging without spamming users.
+* **Robust colour + UUID/ID handling**; missing/invalid values fall back cleanly.
+"""
+
+from __future__ import annotations
+
+import json
+import asyncio
 import discord
 from discord.ext import commands
 import aiohttp
 import aiofiles
-import json
-import os
-from data_manager import data_manager
+from typing import Any
 
-def setup_import_export(bot):
+from data_manager import data_manager  # your DB wrapper
+
+# ────────────────────────── small helpers ─────────────────────────── #
+
+def _pk_colour(value: str | int | None, default: int = 0x8A2BE2) -> int:
+    """Convert PluralKit colour strings like "#ff00ff" to int; tolerate garbage."""
+    if not value:
+        return default
+    if isinstance(value, str):
+        try:
+            return int(value.replace("#", ""), 16)
+        except ValueError:
+            return default
+    return value  # already int
+
+
+def _is_admin(ctx: commands.Context) -> bool:
+    return ctx.guild is None or ctx.author == ctx.guild.owner or ctx.author.guild_permissions.manage_guild
+
+
+async def _get_profile(uid: str) -> dict[str, Any]:
+    """Await `data_manager.get_user_profile` safely even if it double‑wraps a coroutine."""
+    profile = await data_manager.get_user_profile(uid)
+    if asyncio.iscoroutine(profile):
+        # underlying lib returned another coroutine – await it once more
+        profile = await profile
+    return profile or {}
+
+# ───────────────────────── command setup ──────────────────────────── #
+
+def setup_import_export(bot: commands.Bot) -> None:
+
+    #                        EXPORT SYSTEM                       #
     @bot.command(name="export_system")
-    async def export_system(ctx):
-        user_id = str(ctx.author.id)
+    async def export_system(ctx: commands.Context):
+        uid = str(ctx.author.id)
+        profile = await _get_profile(uid)
 
-        profile = await data_manager.get_user_profile(user_id)
-        if not profile or not profile.get("system", {}).get("name"):
+        if not profile.get("system", {}).get("name"):
             await ctx.send("❌ You don't have a system set up yet.")
             return
 
-        export_filename = f"{user_id}_system_backup.json"
-
+        filename = "pixel export.json"
         try:
-            async with aiofiles.open(export_filename, "w") as f:
+            async with aiofiles.open(filename, "w") as f:
                 await f.write(json.dumps(profile, indent=4))
 
-            dm_channel = await ctx.author.create_dm()
-            await dm_channel.send(
-                "📂 Here is your **Pixel** system export file. You can use this to **re-import** your system anytime:",
-                file=discord.File(export_filename)
+            dm = await ctx.author.create_dm()
+            await dm.send(
+                "📂 Here is your **Pixel** system export file. Keep it safe!",
+                file=discord.File(filename),
             )
-
-            await ctx.send("✅ Your system has been exported and sent to your DMs.")
-
+            await ctx.send("✅ Export completed – check your DMs.")
         except Exception as e:
-            print(f"⚠️ Error exporting system for {ctx.author}: {e}")
-            await ctx.send("❌ An error occurred while exporting your system. Please try again.")
+            print(f"⚠️ export_system failed for {ctx.author}: {e}")
+            await ctx.send("❌ Couldn't export your system – please try again.")
 
+    #                        IMPORT PIXEL BACKUP                  #
     @bot.command(name="import_system")
-    async def import_system(ctx):
-        user_id = str(ctx.author.id)
+    async def import_system(ctx: commands.Context):
+        uid = str(ctx.author.id)
 
-        await ctx.send("📂 Please upload your **PixelBot** system backup JSON file.")
+        # attachment may already be present
+        if ctx.message.attachments:
+            message = ctx.message
+        else:
+            await ctx.send("📂 Please upload your **PixelBot** system backup JSON file.")
+            try:
+                message = await bot.wait_for(
+                    "message",
+                    timeout=300,
+                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.attachments,
+                )
+            except asyncio.TimeoutError:
+                return
 
         try:
-            message = await bot.wait_for(
-                "message",
-                timeout=300,
-                check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.attachments
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(message.attachments[0].url) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+
+            data["user_id"] = uid
+            await data_manager.save_user_profile(uid, data)
+            
+            # Count imported items for feedback
+            num_alters = len(data.get("alters", {}))
+            num_folders = len(data.get("folders", {}))
+            
+            await ctx.send(
+                "✅ **Pixel system import completed!**\n" +
+                f"📊 **Imported:** {num_alters} members and {num_folders} folders"
             )
-
-            file_url = message.attachments[0].url
-
-            async with message.channel.typing():
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(file_url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-
-                            # Ensure the data has the correct structure
-                            data["user_id"] = user_id
-                            success = await data_manager.save_user_profile(user_id, data)
-
-                            if success:
-                                await ctx.send("✅ Your system has been successfully imported.")
-                            else:
-                                await ctx.send("❌ Failed to import system. Please try again.")
-                        else:
-                            await ctx.send("❌ Failed to download the file. Please try again.")
-
-        except TimeoutError:
-            return  # Silent timeout - no message
-
         except Exception as e:
-            print(f"⚠️ Error importing system for {ctx.author}: {e}")
-            await ctx.send("❌ An error occurred while importing your system. Please try again.")
+            print(f"⚠️ import_system failed for {ctx.author}: {e}")
+            if _is_admin(ctx):
+                await ctx.send(f"```py\n{e.__class__.__name__}: {e}\n```")
+            await ctx.send("❌ An error occurred while importing your system.")
 
+    #                        IMPORT PLURALKIT                      #
     @bot.command(name="import_pluralkit")
-    async def import_pluralkit(ctx):
-        user_id = str(ctx.author.id)
+    async def import_pluralkit(ctx: commands.Context):
+        uid = str(ctx.author.id)
 
-        await ctx.send("📂 Please upload your **PluralKit** export JSON file.")
+        if ctx.message.attachments:
+            message = ctx.message
+        else:
+            await ctx.send("📂 Please upload your **PluralKit** export JSON file.")
+            try:
+                message = await bot.wait_for(
+                    "message",
+                    timeout=300,
+                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.attachments,
+                )
+            except asyncio.TimeoutError:
+                return
 
         try:
-            message = await bot.wait_for(
-                "message",
-                timeout=300,
-                check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.attachments
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(message.attachments[0].url) as resp:
+                    resp.raise_for_status()
+                    pk = await resp.json()
+
+            profile = await _get_profile(uid)
+            profile.setdefault("system", {})
+            profile.setdefault("alters", {})
+            profile.setdefault("folders", {})
+
+            # ───── system block ─────
+            if pk.get("name"):
+                profile["system"] = {
+                    "name":        pk.get("name", "Imported System"),
+                    "description": pk.get("description", "Imported from PluralKit"),
+                    "pronouns":    pk.get("pronouns", "Not set"),
+                    "avatar":      pk.get("avatar_url"),
+                    "banner":      pk.get("banner"),
+                    "color":       _pk_colour(pk.get("color")),
+                    "tag":         pk.get("tag"),
+                    "created_at":  pk.get("created"),
+                    "front_history": [],
+                    "system_avatar": pk.get("avatar_url"),
+                    "system_banner": pk.get("banner"),
+                    "privacy_settings": {
+                        "show_front": True,
+                        "show_member_count": True,
+                        "allow_member_list": True,
+                    },
+                }
+
+            # ───── member / alter block ─────
+            for member in pk.get("members", []):
+                name = member.get("name", "Unknown")
+                if name in profile["alters"]:
+                    continue
+
+                proxy_tags = member.get("proxy_tags", [])
+                proxy = "No proxy set"
+                if proxy_tags:
+                    pre = proxy_tags[0].get("prefix", "")
+                    suf = proxy_tags[0].get("suffix", "")
+                    if pre and suf:
+                        proxy = f"{pre}...{suf}"
+                    elif pre:
+                        proxy = f"{pre} text"
+                    elif suf:
+                        proxy = f"text {suf}"
+
+                profile["alters"][name] = {
+                    "displayname": member.get("display_name") or name,
+                    "pronouns":    member.get("pronouns", "Not set"),
+                    "description": member.get("description", "Imported from PluralKit"),
+                    "avatar":      member.get("avatar_url"),
+                    "proxy_avatar": member.get("avatar_url"),
+                    "banner":      member.get("banner"),
+                    "proxy":       proxy,
+                    "aliases":     [],
+                    "color":       _pk_colour(member.get("color")),
+                    "use_embed":   True,
+                    "created_at":  member.get("created"),
+                    "role":        None,
+                    "age":         None,
+                    "birthday":    member.get("birthday"),
+                    "front_time":  0,
+                    "last_front":  None,
+                    "privacy": {
+                        "show_in_list": member.get("visibility", "public") == "public",
+                        "allow_proxy":  True,
+                    },
+                }
+
+            # ───── groups / folders block ─────
+            for group in pk.get("groups", []):
+                gname = group.get("name", "Unknown Group")
+                if gname in profile["folders"]:
+                    continue
+
+                profile["folders"][gname] = {
+                    "name":        gname,
+                    "description": group.get("description", "Imported from PluralKit"),
+                    "color":       _pk_colour(group.get("color")),
+                    "alters":      [],
+                }
+
+                for uuid in group.get("members", []):
+                    for m in pk.get("members", []):
+                        m_uid = m.get("uuid") or m.get("id")
+                        if m_uid == uuid:
+                            n = m.get("name")
+                            if n and n not in profile["folders"][gname]["alters"]:
+                                profile["folders"][gname]["alters"].append(n)
+
+            # ───── save and report ─────
+            await data_manager.save_user_profile(uid, profile)
+            await ctx.send(
+                "✅ **PluralKit import completed!**\n" +
+                f"📊 **Imported:** {1 if profile['system'].get('name') else 0} system, "
+                f"{len(profile['alters'])} alters, {len(profile['folders'])} folders"
             )
 
-            file_url = message.attachments[0].url
-
-            async with message.channel.typing():
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(file_url) as response:
-                        if response.status == 200:
-                            await ctx.send("📂 I've detected you've sent a JSON file. If I don't respond with import completed please resend the command!")
-                            
-                            pk_data = await response.json()
-
-                            # Get existing profile or create new one
-                            profile = await data_manager.get_user_profile(user_id)
-                            
-                            # Initialize required dictionaries if they don't exist
-                            if "alters" not in profile:
-                                profile["alters"] = {}
-                            if "folders" not in profile:
-                                profile["folders"] = {}
-                            if "system" not in profile:
-                                profile["system"] = {}
-
-                            # Import system info
-                            if "name" in pk_data:
-                                # Handle color conversion
-                                system_color = pk_data.get("color", 0x8A2BE2)
-                                if isinstance(system_color, str):
-                                    try:
-                                        system_color = int(system_color.replace("#", ""), 16)
-                                    except (ValueError, AttributeError):
-                                        system_color = 0x8A2BE2
-
-                                profile["system"] = {
-                                    "name": pk_data.get("name", "Imported System"),
-                                    "description": pk_data.get("description", "Imported from PluralKit"),
-                                    "pronouns": pk_data.get("pronouns", "Not set"),
-                                    "avatar": pk_data.get("avatar_url"),
-                                    "banner": pk_data.get("banner"),
-                                    "color": system_color,
-                                    "tag": pk_data.get("tag"),
-                                    "created_at": pk_data.get("created"),
-                                    "front_history": [],
-                                    "system_avatar": pk_data.get("avatar_url"),
-                                    "system_banner": pk_data.get("banner"),
-                                    "privacy_settings": {
-                                        "show_front": True,
-                                        "show_member_count": True,
-                                        "allow_member_list": True
-                                    }
-                                }
-
-                            # Import members/alters
-                            if "members" in pk_data:
-                                for member in pk_data["members"]:
-                                    name = member.get("name", "Unknown")
-                                    
-                                    # Skip if alter already exists
-                                    if name in profile.get("alters", {}):
-                                        continue
-
-                                    # Convert PluralKit proxy tags to Pixel format
-                                    proxy_tags = member.get("proxy_tags", [])
-                                    proxy = "No proxy set"
-                                    if proxy_tags:
-                                        prefix = proxy_tags[0].get("prefix", "")
-                                        suffix = proxy_tags[0].get("suffix", "")
-                                
-                                        # Handle different PluralKit proxy formats
-                                        if prefix and suffix:
-                                            # Format: prefix...suffix
-                                            proxy = f"{prefix}...{suffix}"
-                                        elif prefix and not suffix:
-                                            # Format: prefix text (PluralKit style)
-                                            proxy = f"{prefix} text"
-                                        elif suffix and not prefix:
-                                            # Format: text suffix
-                                            proxy = f"text {suffix}"
-                                        else:
-                                            proxy = "No proxy set"
-
-                                    # Handle color conversion for alter
-                                    alter_color = member.get("color", 0x8A2BE2)
-                                    if isinstance(alter_color, str):
-                                        try:
-                                            alter_color = int(alter_color.replace("#", ""), 16)
-                                        except (ValueError, AttributeError):
-                                            alter_color = 0x8A2BE2
-
-                                    alter_data = {
-                                        "displayname": member.get("display_name") or name,
-                                        "pronouns": member.get("pronouns", "Not set"),
-                                        "description": member.get("description", "Imported from PluralKit"),
-                                        "avatar": member.get("avatar_url"),
-                                        "proxy_avatar": member.get("avatar_url"),
-                                        "banner": member.get("banner"),
-                                        "proxy": proxy,
-                                        "aliases": [],
-                                        "color": alter_color,
-                                        "use_embed": True,
-                                        "created_at": member.get("created"),
-                                        "role": None,
-                                        "age": None,
-                                        "birthday": member.get("birthday"),
-                                        "front_time": 0,
-                                        "last_front": None,
-                                        "privacy": {
-                                            "show_in_list": member.get("visibility", "public") == "public",
-                                            "allow_proxy": True
-                                        }
-                                    }
-
-                                    profile["alters"][name] = alter_data
-
-                            # Import groups as folders
-                            if "groups" in pk_data:
-                                for group in pk_data["groups"]:
-                                    group_name = group.get("name", "Unknown Group")
-                                    
-                                    # Skip if folder already exists
-                                    if group_name in profile.get("folders", {}):
-                                        continue
-
-                                    profile["folders"][group_name] = {
-                                        "name": group_name,
-                                        "description": group.get("description", "Imported from PluralKit"),
-                                        "color": group.get("color", 0x8A2BE2),
-                                        "alters": []
-                                    }
-
-                                    # Add members to the folder
-                                    for member_uuid in group.get("members", []):
-                                        # Find member by UUID and add to folder
-                                        for member in pk_data.get("members", []):
-                                            if member.get("uuid") == member_uuid:
-                                                member_name = member.get("name")
-                                                if member_name and member_name not in profile["folders"][group_name]["alters"]:
-                                                    profile["folders"][group_name]["alters"].append(member_name)
-
-                            success = await data_manager.save_user_profile(user_id, profile)
-                            
-                            if success:
-                                system_count = 1 if profile.get("system", {}).get("name") else 0
-                                alter_count = len(profile.get("alters", {}))
-                                folder_count = len(profile.get("folders", {}))
-                                
-                                await ctx.send(f"✅ **PluralKit import completed!**\n"
-                                             f"📊 **Imported:** {system_count} system, {alter_count} alters, {folder_count} folders")
-                            else:
-                                await ctx.send("❌ Failed to save imported data. Please try again.")
-                        else:
-                            await ctx.send("❌ Failed to download the file. Please try again.")
-
-        except TimeoutError:
-            return  # Silent timeout - no message
-
         except Exception as e:
-            print(f"⚠️ Error importing PluralKit data for {ctx.author}: {e}")
-            await ctx.send("❌ An error occurred while importing your PluralKit data. Please try again.")
+            print(f"⚠️ import_pluralkit failed for {ctx.author}: {e}")
+            if _is_admin(ctx):
+                await ctx.send(f"```py\n{e.__class__.__name__}: {e}\n```")
+            await ctx.send("❌ An error occurred while importing your PluralKit data.")

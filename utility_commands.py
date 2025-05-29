@@ -174,17 +174,21 @@ def setup_utility_commands(bot):
                     {
                         "title": "🗣️ Proxy & Autoproxy Commands",
                         "description": "**Proxy Setup:**\n"
-                                     "`!set_proxy <name> <proxy>` - Set proxy for alter\n"
+                                     "`!set_proxy <n> <proxy>` - Set proxy for alter\n"
                                      "• Simple format: `a:` (requires text after)\n"
                                      "• Advanced format: `a:...;` (text between prefix/suffix)\n"
-                                     "`!proxyavatar <name>` - Set separate avatar for proxying\n"
-                                     "`!proxy <name> <message>` - Send proxied message manually\n\n"
-                                     "**Autoproxy:**\n"
-                                     "`!autoproxy latch` - Last proxied alter stays active\n"
-                                     "`!autoproxy latch <name>` - Set specific alter to latch\n"
-                                     "`!autoproxy front <name>` - Set alter as front\n"
-                                     "`!autoproxy unlatch` - Disable autoproxy completely\n"
-                                     "`!autoproxy off` - Turn off autoproxy",
+                                     "`!proxyavatar <n>` - Set separate avatar for proxying\n"
+                                     "`!proxy <n> <message>` - Send proxied message manually\n\n"
+                                     "**Autoproxy (Server-specific):**\n"
+                                     "`!autoproxy latch` - Last proxied alter stays active in this server\n"
+                                     "`!autoproxy front <n>` - Set alter as front in this server\n"
+                                     "`!autoproxy off` - Turn off autoproxy in this server\n\n"
+                                     "**Autoproxy (Global - works in all servers):**\n"
+                                     "`!autoproxy latch global` - Last proxied alter stays active everywhere\n"
+                                     "`!autoproxy front <n> global` - Set alter as front in all servers\n"
+                                     "`!autoproxy unlatch` - Disable all autoproxy (server + global)\n"
+                                     "`!autoproxy unlatch global` - Disable only global autoproxy\n\n"
+                                     "💡 **Tip:** Global autoproxy works across all servers the bot is in!",
                         "color": 0x8A2BE2
                     },
                     # Page 5 - Import & Export

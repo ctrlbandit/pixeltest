@@ -1,7 +1,7 @@
 import os
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import ConnectionFailure
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from typing import Dict, Any, Optional
 import logging
 
@@ -16,27 +16,56 @@ class MongoDataManager:
         self.profiles_collection = None
         self.blacklists_collection = None
         self.system_settings_collection = None
+        self.mongodb_uri = None
+        self.database_name = None
+        self._connection_lock = asyncio.Lock()
         self._cache = {
             'profiles': {},
             'blacklists': {'category': {}, 'channel': {}},
             'system_settings': {}
         }
+    
+    async def _ensure_connection(self):
+        """Ensure MongoDB connection is alive, reconnect if needed"""
+        async with self._connection_lock:
+            try:
+                # Check if we have a client and it's still connected
+                if self.client is not None:
+                    # Test the connection with a quick ping
+                    await asyncio.wait_for(self.client.admin.command('ping'), timeout=5.0)
+                    return True  # Connection is good
+            except (ConnectionFailure, ServerSelectionTimeoutError, asyncio.TimeoutError, Exception) as e:
+                logger.warning(f"MongoDB connection test failed: {e}. Attempting to reconnect...")
+                await self._reconnect()
+                return self.client is not None
         
-    async def initialize(self):
-        """Initialize MongoDB connection"""
-        mongodb_uri = os.getenv("MONGODB_URI")
-        database_name = os.getenv("MONGODB_DATABASE", "pixel_did_bot")
-        
-        if not mongodb_uri:
-            logger.warning("MONGODB_URI not set. Running in local mode with in-memory storage only.")
-            return
-        
+        # If we get here, we need to initialize
+        await self._reconnect()
+        return self.client is not None
+    
+    async def _reconnect(self):
+        """Reconnect to MongoDB"""
         try:
-            self.client = AsyncIOMotorClient(mongodb_uri)
+            # Close existing connection if any
+            if self.client:
+                self.client.close()
+                self.client = None
+                self.db = None
+                self.profiles_collection = None
+                self.blacklists_collection = None
+                self.system_settings_collection = None
+            
+            if not self.mongodb_uri:
+                logger.warning("MONGODB_URI not set. Running in local mode with in-memory storage only.")
+                return
+            
+            # Create new connection
+            self.client = AsyncIOMotorClient(self.mongodb_uri, serverSelectionTimeoutMS=5000)
+            
             # Test the connection
             await self.client.admin.command('ping')
             
-            self.db = self.client[database_name]
+            self.db = self.client[self.database_name]
             self.profiles_collection = self.db.user_profiles
             self.blacklists_collection = self.db.blacklists
             self.system_settings_collection = self.db.system_settings
@@ -44,14 +73,28 @@ class MongoDataManager:
             # Create indexes for better performance
             await self._create_indexes()
             
+            logger.info(f"MongoDB reconnection successful to database: {self.database_name}")
+            
+        except Exception as e:
+            logger.error(f"Failed to reconnect to MongoDB: {e}")
+            self.client = None
+        
+    async def initialize(self):
+        """Initialize MongoDB connection"""
+        self.mongodb_uri = os.getenv("MONGODB_URI")
+        self.database_name = os.getenv("MONGODB_DATABASE", "pixel_did_bot")
+        
+        if not self.mongodb_uri:
+            logger.warning("MONGODB_URI not set. Running in local mode with in-memory storage only.")
+            return
+        
+        await self._reconnect()
+        
+        if self.client:
             # Load initial data into cache
             await self._load_cache()
-            
-            logger.info(f"MongoDB connection established successfully to database: {database_name}")
-            
-        except ConnectionFailure as e:
-            logger.error(f"Failed to connect to MongoDB: {e}")
-            # Fallback to in-memory storage if MongoDB is unavailable
+            logger.info(f"MongoDB connection established successfully to database: {self.database_name}")
+        else:
             logger.warning("Falling back to in-memory storage")
             
     async def _create_indexes(self):
@@ -122,7 +165,8 @@ class MongoDataManager:
             }
         }
         
-        if self.profiles_collection is not None:
+        # Try to get from database if connection is available
+        if await self._ensure_connection() and self.profiles_collection is not None:
             try:
                 profile = await self.profiles_collection.find_one({"user_id": user_id})
                 if profile:
@@ -146,7 +190,8 @@ class MongoDataManager:
             # Update cache
             self._cache['profiles'][user_id] = profile
             
-            if self.profiles_collection is not None:
+            # Try to save to database if connection is available
+            if await self._ensure_connection() and self.profiles_collection is not None:
                 await self.profiles_collection.replace_one(
                     {"user_id": user_id},
                     profile,
@@ -212,7 +257,8 @@ class MongoDataManager:
                 self._cache['blacklists'][blacklist_type] = {}
             self._cache['blacklists'][blacklist_type][guild_id] = data
             
-            if self.blacklists_collection is not None:
+            # Try to save to database if connection is available
+            if await self._ensure_connection() and self.blacklists_collection is not None:
                 await self.blacklists_collection.replace_one(
                     {"type": blacklist_type, "guild_id": guild_id},
                     {"type": blacklist_type, "guild_id": guild_id, "data": data},
@@ -225,8 +271,29 @@ class MongoDataManager:
     
     async def close_connection(self):
         """Close MongoDB connection"""
-        if self.client:
-            self.client.close()
+        async with self._connection_lock:
+            if self.client:
+                try:
+                    self.client.close()
+                    logger.info("MongoDB connection closed successfully")
+                except Exception as e:
+                    logger.warning(f"Error while closing MongoDB connection: {e}")
+                finally:
+                    self.client = None
+                    self.db = None
+                    self.profiles_collection = None
+                    self.blacklists_collection = None
+                    self.system_settings_collection = None
+    
+    async def is_connected(self) -> bool:
+        """Check if MongoDB is currently connected"""
+        try:
+            if self.client is None:
+                return False
+            await asyncio.wait_for(self.client.admin.command('ping'), timeout=2.0)
+            return True
+        except Exception:
+            return False
 
 # Initialize the data manager
 data_manager = MongoDataManager()
