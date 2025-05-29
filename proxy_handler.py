@@ -292,13 +292,33 @@ def setup_proxy_handler(bot: discord.Bot) -> None:
             wh = next((w for w in await msg.channel.webhooks() if w.name == "Pixel Proxy"), None)
             if not wh:
                 wh = await msg.channel.create_webhook(name="Pixel Proxy")
-            await wh.send(content=content if content.strip() else None, username=display, avatar_url=avatar, files=files)
+            
+            # For attachments with no content, ensure we send something valid
+            webhook_content = content.strip() if content.strip() else None
+            
+            _d("WEBHOOK_SEND", {
+                "content": webhook_content, 
+                "files_count": len(files),
+                "username": display,
+                "avatar_url": avatar
+            })
+            
+            await wh.send(
+                content=webhook_content, 
+                username=display, 
+                avatar_url=avatar, 
+                files=files
+            )
             _d("PROXY", display, "→", content[:60])
-        except discord.Forbidden:
+        except discord.Forbidden as e:
+            _d("WEBHOOK_ERR", f"Forbidden: {e}")
             await msg.channel.send(f"⚠️ Can't create webhooks. Proxy message from {display}: {content}")
             return True
+        except discord.HTTPException as e:
+            _d("WEBHOOK_ERR", f"HTTP Exception: {e}")
+            return False
         except Exception as e:
-            _d("WEBHOOK_ERR", e)
+            _d("WEBHOOK_ERR", f"Unexpected error: {e}")
             return False
 
         # 5) Update last_proxied if latch is active
